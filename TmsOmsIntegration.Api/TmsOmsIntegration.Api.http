@@ -1,6 +1,40 @@
 @TmsOmsIntegration.Api_HostAddress = http://localhost:5020
+@TmsApiKey = <your-tms-webhook-api-key>
 
-GET {{TmsOmsIntegration.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{TmsOmsIntegration.Api_HostAddress}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{TmsApiKey}}
+
+{
+    "serviceType": "LAST_MILE",
+    "dispatchType": "HOME_DELIVERY",
+    "status": "DELIVERED",
+    "subStatus": "CLIENT RECEIVED",
+    "vehicleCode": "LIMURB06VAN",
+    "courierName": "Conductor 46",
+    "details": {
+        "orderNumber": "2500000006-01",
+        "trackingNumber": "OE2500000006-01",
+        "clientCode": "01021755",
+        "clientName": "TIENDAS PERUANAS S.A.",
+        "receivedBy": "Pepito Perez",
+        "comments": "Entregado en domicilio",
+        "evidences": [
+            {
+                "label": "Paquete",
+                "fileType": ".jpg",
+                "fileName": "delivered_201054.jpg",
+                "url": "htps://beetrack.com/img/delivered_201054.jpg"
+            },
+            {
+                "label": "Fachada",
+                "fileType": ".jpg",
+                "fileName": "delivered_201055.jpg",
+                "url": "htps://beetrack.com/img/delivered_201055.jpg"
+            }
+        ]
+    },
+    "eventDate": "2025-04-15 16:53:07"
+}
 
 ###
