@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TmsOmsIntegration.Application/TmsOmsIntegration.Application.csproj" />
+  <Project Path="TmsOmsIntegration.Domain/TmsOmsIntegration.Domain.csproj" />
+  <Project Path="TmsOmsIntegration.Infrastructure/TmsOmsIntegration.Infrastructure.csproj" />
+  <Project Path="TmsOmsIntegration.Api/TmsOmsIntegration.Api.csproj" />
+</Solution>
