@@ -1,6 +1,6 @@
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Settings;
 
-public sealed class TmsWebhookOptions
+public sealed class TmsWebhookSettings
 {
     public const string SectionName = "TmsWebhook";
 

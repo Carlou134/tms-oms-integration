@@ -1,4 +1,4 @@
-using TmsOmsIntegration.Api.Webhooks.Tms;
+using TmsOmsIntegration.Api.Settings;
 using TmsOmsIntegration.Application.TmsEvents;
 using TmsOmsIntegration.Infrastructure;
 
@@ -10,10 +10,10 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-builder.Services.AddOptions<TmsWebhookOptions>()
-    .Bind(builder.Configuration.GetSection(TmsWebhookOptions.SectionName))
-    .Validate(options => !string.IsNullOrWhiteSpace(options.ApiKey),
-        $"{TmsWebhookOptions.SectionName}:ApiKey must be configured (see appsettings.model.json).")
+builder.Services.AddOptions<TmsWebhookSettings>()
+    .Bind(builder.Configuration.GetSection(TmsWebhookSettings.SectionName))
+    .Validate(settings => !string.IsNullOrWhiteSpace(settings.ApiKey),
+        $"{TmsWebhookSettings.SectionName}:ApiKey must be configured (see appsettings.model.json).")
     .ValidateOnStart();
 
 builder.Services.AddScoped<ReceiveTmsEvent>();

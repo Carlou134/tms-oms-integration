@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Filters;
 
 /// <summary>
 /// Applies <see cref="ApiKeyAuthFilter"/>; TypeFilter resolves its dependencies from DI,

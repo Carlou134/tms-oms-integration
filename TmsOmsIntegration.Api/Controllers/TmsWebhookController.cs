@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using TmsOmsIntegration.Api.Filters;
+using TmsOmsIntegration.Api.Mappings;
+using TmsOmsIntegration.Api.Requests;
 using TmsOmsIntegration.Application.TmsEvents;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Controllers;
 
 [ApiController]
 [Route("api/webhooks/tms/events")]

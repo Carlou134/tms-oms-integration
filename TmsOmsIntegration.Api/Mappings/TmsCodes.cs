@@ -1,6 +1,6 @@
 using TmsOmsIntegration.Domain.Orders;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Mappings;
 
 /// <summary>
 /// Translates the TMS wire values (e.g. "AT PICKUP POINT") into domain enums,

@@ -1,4 +1,4 @@
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Requests;
 
 public sealed record TmsEvidenceRequest
 {

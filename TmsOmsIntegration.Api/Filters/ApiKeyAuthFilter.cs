@@ -3,10 +3,11 @@ using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Options;
+using TmsOmsIntegration.Api.Settings;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Filters;
 
-internal sealed class ApiKeyAuthFilter(IOptions<TmsWebhookOptions> options) : IAuthorizationFilter
+internal sealed class ApiKeyAuthFilter(IOptions<TmsWebhookSettings> options) : IAuthorizationFilter
 {
     public const string HeaderName = "X-Api-Key";
 

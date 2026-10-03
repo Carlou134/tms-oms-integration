@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Converters;
 
 /// <summary>
 /// The TMS sends "yyyy-MM-dd HH:mm:ss" without offset, which System.Text.Json does not accept

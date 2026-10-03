@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using TmsOmsIntegration.Api.Converters;
+using TmsOmsIntegration.Api.Mappings;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Requests;
 
 public sealed record TmsEventRequest : IValidatableObject
 {

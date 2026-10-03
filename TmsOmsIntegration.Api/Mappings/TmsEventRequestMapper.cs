@@ -1,6 +1,7 @@
+using TmsOmsIntegration.Api.Requests;
 using TmsOmsIntegration.Application.TmsEvents;
 
-namespace TmsOmsIntegration.Api.Webhooks.Tms;
+namespace TmsOmsIntegration.Api.Mappings;
 
 internal static class TmsEventRequestMapper
 {
