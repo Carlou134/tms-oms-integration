@@ -9,6 +9,8 @@ namespace TmsOmsIntegration.Domain.Orders;
 /// </summary>
 public sealed class Order
 {
+    public const int MaxVisits = 3;
+
     private readonly List<IDomainEvent> _domainEvents = [];
 
     private Order(string orderNumber, string? clientCode)
@@ -52,6 +54,17 @@ public sealed class Order
             return;
         }
 
+        if (status is OrderStatus.Delivered or OrderStatus.NotDelivered)
+            VisitCount++;
+
+        ChangeStatus(phase, status, eventDate, isAutomatic: false);
+
+        if (status == OrderStatus.NotDelivered && VisitCount == MaxVisits)
+            ChangeStatus(ServiceType.Return, OrderStatus.ToBeReturn, eventDate, isAutomatic: true);
+    }
+
+    private void ChangeStatus(ServiceType phase, OrderStatus status, DateTimeOffset eventDate, bool isAutomatic)
+    {
         var previousStatus = Status;
 
         Status = status;
@@ -59,6 +72,6 @@ public sealed class Order
         LastEventDate = eventDate;
 
         _domainEvents.Add(new OrderStatusChanged(
-            OrderNumber, previousStatus, status, phase, VisitCount, eventDate));
+            OrderNumber, previousStatus, status, phase, VisitCount, eventDate, isAutomatic));
     }
 }

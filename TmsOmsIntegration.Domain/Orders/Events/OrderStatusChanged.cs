@@ -8,4 +8,5 @@ public sealed record OrderStatusChanged(
     OrderStatus NewStatus,
     ServiceType Phase,
     int VisitCount,
-    DateTimeOffset EventDate) : IDomainEvent;
+    DateTimeOffset EventDate,
+    bool IsAutomatic) : IDomainEvent;
