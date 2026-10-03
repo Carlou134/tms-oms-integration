@@ -1,3 +1,5 @@
+using TmsOmsIntegration.Domain.Abstractions;
+
 namespace TmsOmsIntegration.Domain.Orders;
 
 /// <summary>
@@ -6,6 +8,8 @@ namespace TmsOmsIntegration.Domain.Orders;
 /// </summary>
 public sealed class Order
 {
+    private readonly List<IDomainEvent> _domainEvents = [];
+
     private Order(string orderNumber, string? clientCode)
     {
         OrderNumber = orderNumber;
@@ -23,6 +27,10 @@ public sealed class Order
     public int VisitCount { get; private set; }
 
     public DateTimeOffset? LastEventDate { get; private set; }
+
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
+
+    public void ClearDomainEvents() => _domainEvents.Clear();
 
     public static Order Create(string orderNumber, string? clientCode = null)
     {
