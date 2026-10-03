@@ -1,4 +1,5 @@
 using TmsOmsIntegration.Domain.Abstractions;
+using TmsOmsIntegration.Domain.Orders.Events;
 
 namespace TmsOmsIntegration.Domain.Orders;
 
@@ -28,6 +29,8 @@ public sealed class Order
 
     public DateTimeOffset? LastEventDate { get; private set; }
 
+    public bool IsFinal => Status is OrderStatus.Delivered or OrderStatus.Returned;
+
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
     public void ClearDomainEvents() => _domainEvents.Clear();
@@ -38,5 +41,24 @@ public sealed class Order
             throw new ArgumentException("Order number is required.", nameof(orderNumber));
 
         return new Order(orderNumber.Trim(), clientCode);
+    }
+
+    public void Apply(ServiceType phase, OrderStatus status, DateTimeOffset eventDate)
+    {
+        if (IsFinal)
+        {
+            _domainEvents.Add(new OrderEventRejected(
+                OrderNumber, Status!.Value, status, RejectionReason.FinalState, eventDate));
+            return;
+        }
+
+        var previousStatus = Status;
+
+        Status = status;
+        Phase = phase;
+        LastEventDate = eventDate;
+
+        _domainEvents.Add(new OrderStatusChanged(
+            OrderNumber, previousStatus, status, phase, VisitCount, eventDate));
     }
 }
