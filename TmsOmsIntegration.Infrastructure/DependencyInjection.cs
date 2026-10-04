@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
         services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
         services.AddSingleton<INotificationFormatter, DefaultNotificationFormatter>();
+        services.AddSingleton<INotificationFormatter, TiendasPeruanasNotificationFormatter>();
 
         services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
             client.Timeout = TimeSpan.FromSeconds(30));
