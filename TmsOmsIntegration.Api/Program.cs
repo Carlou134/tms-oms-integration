@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using TmsOmsIntegration.Api.Settings;
+using TmsOmsIntegration.Application.History;
 using TmsOmsIntegration.Application.TmsEvents;
 using TmsOmsIntegration.Infrastructure;
 
@@ -6,7 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -17,9 +20,11 @@ builder.Services.AddOptions<TmsWebhookSettings>()
     .ValidateOnStart();
 
 builder.Services.AddScoped<ReceiveTmsEvent>();
+builder.Services.AddScoped<GetOrderHistory>();
 builder.Services.AddInfrastructure();
 
 builder.Services.AddSubscriber<TmsEventReceived, ProcessTmsEventHandler>();
+builder.Services.AddSubscriber<TmsEventProcessed, RecordHistoryHandler>();
 
 var app = builder.Build();
 
