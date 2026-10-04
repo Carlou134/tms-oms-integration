@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 using TmsOmsIntegration.Application.Abstractions.Messaging;
 using TmsOmsIntegration.Application.Abstractions.Notifications;
 using TmsOmsIntegration.Application.Abstractions.Persistence;
@@ -24,8 +26,22 @@ public static class DependencyInjection
         services.AddSingleton<INotificationFormatter, TiendasPeruanasNotificationFormatter>();
         services.AddSingleton<INotificationSender, FakePushNotificationSender>();
 
-        services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
-            client.Timeout = TimeSpan.FromSeconds(30));
+        // HttpClient.Timeout would also cut the retries short, so timeouts live in the pipeline instead.
+        services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>()
+            .AddResilienceHandler("evidence-download", pipeline =>
+            {
+                pipeline.AddTimeout(TimeSpan.FromSeconds(60));
+
+                pipeline.AddRetry(new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = 3,
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    Delay = TimeSpan.FromSeconds(2)
+                });
+
+                pipeline.AddTimeout(TimeSpan.FromSeconds(10));
+            });
 
         return services;
     }
