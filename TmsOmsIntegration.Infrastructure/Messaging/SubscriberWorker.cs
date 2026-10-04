@@ -15,6 +15,8 @@ internal sealed class SubscriberWorker<TMessage, THandler>(
     ChannelSubscription<TMessage, THandler> subscription,
     IServiceScopeFactory scopeFactory,
     ResiliencePipelineProvider<string> pipelineProvider,
+    IDeadLetterQueue deadLetterQueue,
+    TimeProvider timeProvider,
     ILogger<SubscriberWorker<TMessage, THandler>> logger) : BackgroundService
     where TMessage : class
     where THandler : IEventHandler<TMessage>
@@ -33,10 +35,31 @@ internal sealed class SubscriberWorker<TMessage, THandler>(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                // Dead-lettering is added in the next commit.
-                logger.LogError(exception, "{Handler} failed to handle {MessageType} after all retries",
+                logger.LogError(exception, "{Handler} failed to handle {MessageType} after all retries, sent to dead letter queue",
                     typeof(THandler).Name, typeof(TMessage).Name);
+
+                await DeadLetterAsync(message, exception);
             }
+        }
+    }
+
+    private async Task DeadLetterAsync(TMessage message, Exception exception)
+    {
+        try
+        {
+            await deadLetterQueue.AddAsync(new DeadLetterMessage(
+                Guid.CreateVersion7(),
+                typeof(TMessage).Name,
+                typeof(THandler).Name,
+                MessageSerializer.Serialize(message),
+                exception.Message,
+                timeProvider.GetUtcNow()));
+        }
+        catch (Exception deadLetterException)
+        {
+            // The worker must keep consuming even if the dead letter queue itself fails.
+            logger.LogCritical(deadLetterException, "Could not dead-letter {MessageType} from {Handler}",
+                typeof(TMessage).Name, typeof(THandler).Name);
         }
     }
 

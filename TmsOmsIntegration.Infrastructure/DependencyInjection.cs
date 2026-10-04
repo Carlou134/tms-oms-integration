@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
+        services.AddSingleton<IDeadLetterQueue, InMemoryDeadLetterQueue>();
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
         services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
