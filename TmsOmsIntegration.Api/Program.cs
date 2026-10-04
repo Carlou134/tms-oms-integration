@@ -24,6 +24,7 @@ builder.Services.AddScoped<GetOrderHistory>();
 builder.Services.AddInfrastructure();
 
 builder.Services.AddSubscriber<TmsEventReceived, ProcessTmsEventHandler>();
+builder.Services.AddSubscriber<TmsEventProcessed, RecordHistoryHandler>();
 
 var app = builder.Build();
 
