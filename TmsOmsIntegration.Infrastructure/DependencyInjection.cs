@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
         services.AddSingleton<INotificationFormatter, DefaultNotificationFormatter>();
         services.AddSingleton<INotificationFormatter, TiendasPeruanasNotificationFormatter>();
+        services.AddSingleton<INotificationSender, FakePushNotificationSender>();
 
         services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
             client.Timeout = TimeSpan.FromSeconds(30));
