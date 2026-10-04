@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using TmsOmsIntegration.Application.Abstractions.Messaging;
+using TmsOmsIntegration.Application.Abstractions.Notifications;
 using TmsOmsIntegration.Application.Abstractions.Persistence;
 using TmsOmsIntegration.Application.Abstractions.Storage;
 using TmsOmsIntegration.Infrastructure.Messaging;
+using TmsOmsIntegration.Infrastructure.Notifications;
 using TmsOmsIntegration.Infrastructure.Persistence;
 using TmsOmsIntegration.Infrastructure.Storage;
 
@@ -18,6 +20,9 @@ public static class DependencyInjection
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
         services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
+        services.AddSingleton<INotificationFormatter, DefaultNotificationFormatter>();
+        services.AddSingleton<INotificationFormatter, TiendasPeruanasNotificationFormatter>();
+        services.AddSingleton<INotificationSender, FakePushNotificationSender>();
 
         services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
             client.Timeout = TimeSpan.FromSeconds(30));
