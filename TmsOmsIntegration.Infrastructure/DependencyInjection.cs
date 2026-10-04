@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
+        services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
 
         services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
             client.Timeout = TimeSpan.FromSeconds(30));
