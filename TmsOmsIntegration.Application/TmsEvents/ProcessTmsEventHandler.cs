@@ -6,7 +6,7 @@ namespace TmsOmsIntegration.Application.TmsEvents;
 
 public sealed class ProcessTmsEventHandler(
     IOrderRepository orderRepository,
-    IEventPublisher eventPublisher,
+    IOutbox outbox,
     ILogger<ProcessTmsEventHandler> logger) : IEventHandler<TmsEventReceived>
 {
     public async Task HandleAsync(TmsEventReceived message, CancellationToken cancellationToken = default)
@@ -22,11 +22,12 @@ public sealed class ProcessTmsEventHandler(
         }
 
         order.Apply(tmsEvent.ServiceType, tmsEvent.Status, tmsEvent.EventDate);
-        await orderRepository.SaveAsync(order, cancellationToken);
 
         var processed = new TmsEventProcessed(message.EventKey, tmsEvent, [.. order.DomainEvents]);
         order.ClearDomainEvents();
 
-        await eventPublisher.PublishAsync(processed, cancellationToken);
+        // With a database, both writes share one transaction committed by SaveAsync, so it goes last.
+        await outbox.AddAsync(processed, cancellationToken);
+        await orderRepository.SaveAsync(order, cancellationToken);
     }
 }
