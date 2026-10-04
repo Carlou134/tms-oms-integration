@@ -21,6 +21,9 @@ public static class DependencyInjection
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
         services.AddSingleton<IDeadLetterQueue, InMemoryDeadLetterQueue>();
+        services.AddSingleton<InMemoryOutbox>();
+        services.AddSingleton<IOutbox>(provider => provider.GetRequiredService<InMemoryOutbox>());
+        services.AddHostedService<OutboxDispatcher>();
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
         services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
