@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
+        services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
 
         return services;
     }
