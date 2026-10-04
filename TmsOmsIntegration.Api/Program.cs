@@ -19,6 +19,8 @@ builder.Services.AddOptions<TmsWebhookSettings>()
 builder.Services.AddScoped<ReceiveTmsEvent>();
 builder.Services.AddInfrastructure();
 
+builder.Services.AddSubscriber<TmsEventReceived, ProcessTmsEventHandler>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
