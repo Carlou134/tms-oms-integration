@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using TmsOmsIntegration.Application.Abstractions.Messaging;
+using TmsOmsIntegration.Application.Abstractions.Persistence;
 using TmsOmsIntegration.Infrastructure.Messaging;
+using TmsOmsIntegration.Infrastructure.Persistence;
 
 namespace TmsOmsIntegration.Infrastructure;
 
@@ -11,6 +13,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
+        services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
 
         return services;
     }
