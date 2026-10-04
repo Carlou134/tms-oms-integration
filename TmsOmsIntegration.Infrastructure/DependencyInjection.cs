@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using TmsOmsIntegration.Application.Abstractions.Messaging;
 using TmsOmsIntegration.Application.Abstractions.Persistence;
+using TmsOmsIntegration.Application.Abstractions.Storage;
 using TmsOmsIntegration.Infrastructure.Messaging;
 using TmsOmsIntegration.Infrastructure.Persistence;
+using TmsOmsIntegration.Infrastructure.Storage;
 
 namespace TmsOmsIntegration.Infrastructure;
 
@@ -15,6 +17,10 @@ public static class DependencyInjection
         services.AddSingleton<IEventPublisher, ChannelEventBus>();
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
         services.AddSingleton<IOrderHistoryRepository, InMemoryOrderHistoryRepository>();
+        services.AddSingleton<IEvidenceStorage, InMemoryEvidenceStorage>();
+
+        services.AddHttpClient<IEvidenceDownloader, HttpEvidenceDownloader>(client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
 
         return services;
     }

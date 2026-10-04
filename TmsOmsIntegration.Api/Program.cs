@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using TmsOmsIntegration.Api.Settings;
+using TmsOmsIntegration.Application.Evidences;
 using TmsOmsIntegration.Application.History;
 using TmsOmsIntegration.Application.TmsEvents;
 using TmsOmsIntegration.Infrastructure;
@@ -25,6 +26,7 @@ builder.Services.AddInfrastructure();
 
 builder.Services.AddSubscriber<TmsEventReceived, ProcessTmsEventHandler>();
 builder.Services.AddSubscriber<TmsEventProcessed, RecordHistoryHandler>();
+builder.Services.AddSubscriber<TmsEventProcessed, StoreEvidencesHandler>();
 
 var app = builder.Build();
 
