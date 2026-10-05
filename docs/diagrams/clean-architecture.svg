@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1050" width="900" height="1050" font-family="Arial, Helvetica, sans-serif">
+  <title>Clean Architecture - Integración TMS-OMS</title>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="1050" rx="16" fill="#ffffff"/>
+
+  <text x="450" y="42" text-anchor="middle" font-size="24" font-weight="bold" fill="#1f2937">Clean Architecture - Integración TMS-OMS</text>
+
+  <!-- Outer ring, left half: Api -->
+  <path d="M 450 70 A 430 430 0 0 0 450 930 L 450 770 A 270 270 0 0 1 450 230 Z"
+        fill="#a5d6a7" stroke="#ffffff" stroke-width="4"/>
+  <!-- Outer ring, right half: Infrastructure -->
+  <path d="M 450 70 A 430 430 0 0 1 450 930 L 450 770 A 270 270 0 0 0 450 230 Z"
+        fill="#90caf9" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Application -->
+  <circle cx="450" cy="500" r="270" fill="#f4a7a0" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Domain -->
+  <circle cx="450" cy="500" r="150" fill="#fbe38e" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Api labels -->
+  <text x="290" y="160" text-anchor="middle" font-size="22" font-weight="bold" fill="#1b5e20">Api</text>
+  <text x="290" y="184" text-anchor="middle" font-size="13" fill="#1f2937">TmsOmsIntegration.Api</text>
+  <text x="290" y="204" text-anchor="middle" font-size="12" fill="#1f2937">Controllers · DTOs · Filtros</text>
+  <text x="320" y="850" text-anchor="middle" font-size="12" fill="#1f2937">Recibe el webhook del TMS</text>
+  <text x="320" y="868" text-anchor="middle" font-size="12" fill="#1f2937">y expone el historial</text>
+
+  <!-- Infrastructure labels -->
+  <text x="610" y="160" text-anchor="middle" font-size="22" font-weight="bold" fill="#0d47a1">Infrastructure</text>
+  <text x="610" y="184" text-anchor="middle" font-size="13" fill="#1f2937">TmsOmsIntegration.Infrastructure</text>
+  <text x="610" y="204" text-anchor="middle" font-size="12" fill="#1f2937">Bus · Outbox · DLQ · Persistencia</text>
+  <text x="580" y="850" text-anchor="middle" font-size="12" fill="#1f2937">Implementa los puertos:</text>
+  <text x="580" y="868" text-anchor="middle" font-size="12" fill="#1f2937">HTTP, evidencias, notificaciones</text>
+
+  <!-- Application labels -->
+  <text x="450" y="290" text-anchor="middle" font-size="20" font-weight="bold" fill="#8e2a1f">Application</text>
+  <text x="450" y="312" text-anchor="middle" font-size="13" fill="#1f2937">TmsOmsIntegration.Application</text>
+  <text x="450" y="332" text-anchor="middle" font-size="12" fill="#1f2937">Casos de uso · Suscriptores · Puertos</text>
+
+  <!-- Domain labels -->
+  <text x="450" y="478" text-anchor="middle" font-size="20" font-weight="bold" fill="#7a5b00">Domain</text>
+  <text x="450" y="501" text-anchor="middle" font-size="13" fill="#1f2937">TmsOmsIntegration.Domain</text>
+  <text x="450" y="521" text-anchor="middle" font-size="12" fill="#1f2937">Order · Domain events</text>
+  <text x="450" y="541" text-anchor="middle" font-size="12" font-style="italic" fill="#1f2937">Sin dependencias</text>
+
+  <!-- Dependencies point inward -->
+  <line x1="35" y1="500" x2="172" y2="500" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="190" y1="500" x2="293" y2="500" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="865" y1="500" x2="728" y2="500" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="710" y1="500" x2="607" y2="500" stroke="#1f2937" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Notes -->
+  <text x="450" y="985" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2937">Las dependencias apuntan siempre hacia el centro: Domain no depende de nadie</text>
+  <text x="450" y="1012" text-anchor="middle" font-size="13" fill="#4b5563">La Api referencia a Infrastructure solo para registrar la inyección de dependencias (Program.cs)</text>
+</svg>
