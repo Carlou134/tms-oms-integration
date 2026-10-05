@@ -37,6 +37,7 @@ propio formato, con reintentos automáticos ante fallos temporales.
 - **`System.Threading.Channels`** como bus Publish-Subscribe en memoria
 - **Polly 8** (`Microsoft.Extensions.Http.Resilience`) para los reintentos
 - Repositorios y almacenamiento **en memoria**, según lo permite el enunciado: no se requiere ningún servicio externo
+- **xUnit** para las pruebas unitarias
 
 ## Estructura del proyecto
 
@@ -46,6 +47,7 @@ TmsOmsIntegration.slnx
 ├── TmsOmsIntegration.Application     Casos de uso, suscriptores y puertos (interfaces)
 ├── TmsOmsIntegration.Infrastructure  Bus, Outbox, reintentos, repositorios, evidencias y notificaciones
 ├── TmsOmsIntegration.Api             Controllers, contratos de entrada y composición de la aplicación
+├── TmsOmsIntegration.Tests           Pruebas unitarias de Domain y Application
 └── docs                              Diagramas y decisiones técnicas
 ```
 
@@ -132,6 +134,31 @@ curl http://localhost:5020/api/orders/2500000007-01/history
 
 El resultado de cada paso (notificaciones, evidencias guardadas, reintentos y mensajes fallidos)
 se muestra en la consola de la aplicación.
+
+## Pruebas unitarias
+
+Las pruebas cubren las reglas de negocio y las piezas de Application con decisiones propias. No
+requieren levantar la API ni configurar la API key.
+
+| Clase probada | Qué verifica | Requisitos |
+|---|---|---|
+| `Order` | Rechazo de eventos en `DELIVERED` y `RETURNED` | 2 |
+| `Order` | Contador de visitas y `TO BE RETURN` automático solo con el tercer `NOT DELIVERED` | 3, 4 |
+| `ReceiveTmsEvent` y `TmsEventKey` | Descarte de duplicados, liberación de la clave si falla la publicación y normalización de la clave | 1 |
+| `EvidenceMilestoneFilter` | Evidencias solo en los seis hitos, con evidencias y en eventos aplicados | 6 |
+| `NotificationFormatterResolver` | Formateador del cliente, formateador por defecto y errores de configuración | 7 |
+
+**Visual Studio 2026:** menú **Prueba** → **Ejecutar todas las pruebas** (Ctrl+R, A). Los resultados
+se ven en el **Explorador de pruebas** (Ctrl+E, T).
+
+**Visual Studio Code:** con C# Dev Kit, desde la vista **Testing** (el ícono del matraz) →
+**Run Tests**.
+
+**Línea de comandos:**
+
+```bash
+dotnet test
+```
 
 ## Endpoints
 

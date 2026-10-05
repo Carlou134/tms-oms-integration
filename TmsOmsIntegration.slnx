@@ -3,4 +3,5 @@
   <Project Path="TmsOmsIntegration.Domain/TmsOmsIntegration.Domain.csproj" />
   <Project Path="TmsOmsIntegration.Infrastructure/TmsOmsIntegration.Infrastructure.csproj" />
   <Project Path="TmsOmsIntegration.Api/TmsOmsIntegration.Api.csproj" />
+  <Project Path="TmsOmsIntegration.Tests/TmsOmsIntegration.Tests.csproj" />
 </Solution>
