@@ -51,37 +51,65 @@ TmsOmsIntegration.slnx
 
 ## Cómo ejecutarlo
 
-### Requisitos previos
-
-- [SDK de .NET 10](https://dotnet.microsoft.com/download)
-
-### 1. Configurar la API key del webhook
+**Requisito previo:** [SDK de .NET 10](https://dotnet.microsoft.com/download). Visual Studio 2026
+ya lo incluye.
 
 El webhook exige una API key en el header `X-Api-Key`. Ningún secreto se guarda en el repositorio:
 [`appsettings.model.json`](TmsOmsIntegration.Api/appsettings.model.json) muestra la estructura
-esperada, y el valor se configura con User Secrets.
+esperada, y el valor se configura con User Secrets. Si la API key no está configurada, la
+aplicación no arranca e indica el motivo.
+
+En todos los casos, la API queda disponible en `http://localhost:5020`.
+
+### Opción A: Visual Studio 2026
+
+1. Abrir la solución `TmsOmsIntegration.slnx`.
+2. Configurar la API key: clic derecho en el proyecto `TmsOmsIntegration.Api` → **Administrar secretos de usuario** y completar el `secrets.json` que se abre:
+
+   ```json
+   {
+     "TmsWebhook": {
+       "ApiKey": "<tu-api-key>"
+     }
+   }
+   ```
+
+3. Verificar que `TmsOmsIntegration.Api` sea el proyecto de inicio y elegir el perfil **`http`** en la barra de herramientas.
+4. Ejecutar con **F5** (con depuración) o **Ctrl+F5** (sin depuración).
+5. Abrir [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), reemplazar `<your-tms-webhook-api-key>` por la API key configurada y hacer clic en **Send request** sobre la petición.
+
+> Al probar los reintentos con depuración, Visual Studio se detiene en cada excepción que luego maneja Polly. Para ver el flujo completo sin interrupciones, conviene usar **Ctrl+F5**.
+
+### Opción B: Visual Studio Code
+
+Requiere las extensiones [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)
+y [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client).
+
+1. Abrir la carpeta del repositorio.
+2. Configurar la API key desde la terminal integrada:
+
+   ```bash
+   dotnet user-secrets set "TmsWebhook:ApiKey" "<tu-api-key>" --project TmsOmsIntegration.Api
+   ```
+
+3. Ejecutar la API desde la terminal:
+
+   ```bash
+   dotnet run --project TmsOmsIntegration.Api --launch-profile http
+   ```
+
+   O, para depurar, desde **Run and Debug** (Ctrl+Shift+D) con la configuración **C#** sobre el proyecto `TmsOmsIntegration.Api`.
+
+4. Abrir [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), reemplazar `<your-tms-webhook-api-key>` por la API key configurada y hacer clic en **Send Request** sobre la petición.
+
+### Opción C: línea de comandos
 
 ```bash
 dotnet user-secrets set "TmsWebhook:ApiKey" "<tu-api-key>" --project TmsOmsIntegration.Api
-```
-
-Si la API key no está configurada, la aplicación no arranca e indica el motivo.
-
-### 2. Ejecutar la API
-
-```bash
 dotnet run --project TmsOmsIntegration.Api --launch-profile http
 ```
 
-La API queda disponible en `http://localhost:5020`.
-
-### 3. Enviar un evento
-
-El archivo [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http)
-contiene la trama de ejemplo del enunciado. Se puede ejecutar desde Visual Studio o VS Code
-reemplazando `<your-tms-webhook-api-key>` por la API key configurada.
-
-También con `curl`:
+Y enviar un evento con `curl`:
 
 ```bash
 curl -X POST http://localhost:5020/api/webhooks/tms/events \
