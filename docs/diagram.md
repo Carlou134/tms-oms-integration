@@ -9,6 +9,9 @@ Este documento cubre dos entregables del caso:
 1. [Diagrama de Arquitectura](#1-diagrama-de-arquitectura)
 2. [Descripción de Componentes](#2-descripción-de-componentes)
 
+La justificación de los patrones y las demás decisiones técnicas están en
+[technical-decisions.md](technical-decisions.md).
+
 ---
 
 ## 1. Diagrama de Arquitectura
