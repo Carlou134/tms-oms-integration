@@ -1,0 +1,36 @@
+@startuml deployment
+!include <C4/C4_Deployment>
+
+LAYOUT_TOP_DOWN()
+skinparam linetype ortho
+skinparam ranksep 120
+skinparam nodesep 160
+
+title Physical Architecture - TMS-OMS Integration
+
+System_Ext(tms, "TMS", "Emits order events and hosts the evidence photos")
+
+Deployment_Node(server, "Application server", "Single .NET 10 process: TmsOmsIntegration.Api") {
+
+    Container(api, "Web API", "ASP.NET Core", "Receives TMS events (webhook) and exposes the history query")
+
+    ContainerQueue(bus, "Event bus", "In-memory, Publish-Subscribe", "Received and processed event topics. Retries and dead letter queue")
+
+    Container(workers, "Background processors", "Background services", "Update the order, record the history, store the evidences and notify the customer")
+
+    ContainerDb(store, "Storage", "In-memory", "Orders, history, evidences, already received events and Outbox")
+}
+
+Person(client, "Customer", "Receives the notification in its own format")
+
+Rel_D(tms, api, "1. Sends the event", "HTTPS POST")
+Rel_D(api, bus, "2. Publishes the received event")
+Rel_D(bus, workers, "3. Delivers to each subscriber")
+Rel_D(workers, store, "4. Reads and saves")
+Rel_U(workers, bus, "5. Publishes the processed event")
+Rel_U(workers, tms, "6. Downloads the evidences", "HTTPS GET")
+Rel_D(workers, client, "7. Sends the notification", "Push")
+Rel_D(api, store, "Queries the history")
+
+SHOW_LEGEND()
+@enduml

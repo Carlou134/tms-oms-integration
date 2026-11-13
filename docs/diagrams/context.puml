@@ -1,0 +1,32 @@
+@startuml context
+!include <C4/C4_Context>
+
+LAYOUT_TOP_DOWN()
+skinparam linetype ortho
+skinparam ranksep 140
+skinparam nodesep 120
+
+title Context Diagram (C4 Level 1) - TMS-OMS Integration
+
+Person_Ext(courier, "Courier", "Picks up, delivers and returns orders on a route")
+
+System_Ext(tms, "TMS", "External transportation management system (e.g. Beetrack). Tracks routes and emits order events")
+
+System(integration, "TMS-OMS Integration", "Receives TMS events, updates orders, records the history, stores the evidences and notifies customers")
+
+System(oms, "OMS", "Internal order management system. Source of truth for customers and orders")
+System_Ext(storage, "Evidence storage", "Stores the photos and digital signatures of each order")
+System_Ext(push, "Push provider", "Delivers notifications to customers")
+
+Person(client, "Customer", "Company that owns the orders (e.g. TIENDAS PERUANAS)")
+
+Rel_D(courier, tms, "Reports route events", "Mobile app")
+Rel_D(tms, integration, "Sends order events", "Webhook, HTTPS POST, JSON")
+Rel_U(integration, tms, "Downloads the evidences", "HTTPS GET")
+Rel_D(integration, oms, "Queries and updates orders, records the history")
+Rel_D(integration, storage, "Stores the evidences per order")
+Rel_D(integration, push, "Sends notifications in each customer's format")
+Rel_D(push, client, "Push notification")
+
+SHOW_LEGEND()
+@enduml

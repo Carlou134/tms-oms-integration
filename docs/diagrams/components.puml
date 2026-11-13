@@ -1,0 +1,47 @@
+@startuml components
+!include <C4/C4_Component>
+
+LAYOUT_TOP_DOWN()
+skinparam linetype ortho
+skinparam ranksep 150
+skinparam nodesep 130
+
+title Component Diagram (C4 Level 3) - Clean Architecture
+
+Boundary(apiLayer, "Api", "HTTP entry point") {
+    Component(controllers, "Controllers", "ASP.NET Core", "TmsWebhookController (webhook) and OrdersController (history)")
+    Component(apiSupport, "Contracts and filters", "DTOs, Mappings, Filters", "TMS JSON shape, code translation and API key validation")
+}
+
+Boundary(applicationLayer, "Application", "Use cases") {
+    Component(useCases, "Use cases", "C#", "ReceiveTmsEvent (reception) and GetOrderHistory (query)")
+    Component(handlers, "Subscribers", "IEventHandler", "Process the event, record the history, store the evidences and notify the customer")
+    Component(ports, "Ports", "Interfaces", "Bus, Outbox, repositories, evidence storage and notifications")
+}
+
+Boundary(domainLayer, "Domain", "Business rules") {
+    Component(order, "Order", "Aggregate", "Final state, visit counter and automatic TO BE RETURN")
+    Component(domainEvents, "Domain events", "Records", "OrderStatusChanged and OrderEventRejected")
+}
+
+Boundary(infrastructureLayer, "Infrastructure", "Adapters") {
+    Component(messaging, "Messaging", "Channel<T>, Polly", "Pub/Sub bus, workers with retries, Outbox and Dead Letter Queue")
+    Component(persistence, "Persistence", "In-memory", "Orders, history and idempotency")
+    Component(evidences, "Evidences", "HttpClient, in-memory", "Download with retries and storage per order")
+    Component(notifications, "Notifications", "Strategy", "Per-customer formatters and push delivery")
+}
+
+Rel_D(controllers, useCases, "Uses")
+Rel_R(controllers, apiSupport, "Uses")
+Rel_D(useCases, ports, "Depends on")
+Rel_D(handlers, ports, "Depends on")
+Rel_D(handlers, order, "Applies the rules")
+Rel_R(order, domainEvents, "Raises")
+
+Rel_U(messaging, ports, "Implements")
+Rel_U(persistence, ports, "Implements")
+Rel_U(evidences, ports, "Implements")
+Rel_U(notifications, ports, "Implements")
+
+SHOW_LEGEND()
+@enduml

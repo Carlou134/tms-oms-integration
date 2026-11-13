@@ -1,197 +1,196 @@
-# Decisiones Técnicas - Integración TMS-OMS
+# Technical Decisions - TMS-OMS Integration
 
-Este documento explica **por qué** la integración está construida como está. Cubre el entregable
-de **justificación de patrones** y deja registradas las interpretaciones del enunciado, los
-supuestos y las limitaciones conocidas.
+This document explains **why** the integration is built the way it is. It covers the **pattern
+justification** deliverable and records the interpretations of the requirements, the assumptions
+and the known limitations.
 
-La arquitectura y sus componentes se describen en [diagram.md](diagram.md).
+The architecture and its components are described in [diagram.md](diagram.md).
 
-1. [Justificación de patrones](#1-justificación-de-patrones)
-2. [Interpretaciones del enunciado](#2-interpretaciones-del-enunciado)
-3. [Supuestos](#3-supuestos)
-4. [Limitaciones conocidas](#4-limitaciones-conocidas)
+1. [Pattern justification](#1-pattern-justification)
+2. [Interpretations of the requirements](#2-interpretations-of-the-requirements)
+3. [Assumptions](#3-assumptions)
+4. [Known limitations](#4-known-limitations)
 
 ---
 
-## 1. Justificación de patrones
+## 1. Pattern justification
 
-### Resumen
+### Summary
 
-| Patrón | Tipo | Requisitos |
+| Pattern | Type | Requirements |
 |---|---|---|
-| [Webhook](#11-webhook) | Integración | 1 |
-| [Idempotent Receiver](#12-idempotent-receiver) | Integración | 1, 3, 8 |
-| [Envelope Wrapper](#13-envelope-wrapper) | Integración | 1 |
-| [Message Translator](#14-message-translator) | Integración | 1, 7 |
-| [Publish-Subscribe Channel](#15-publish-subscribe-channel) | Integración | 5, 6, 7, 8 |
-| [Message Filter](#16-message-filter) | Integración | 6 |
-| [Retry con backoff exponencial](#17-retry-con-backoff-exponencial) | Integración | 8 |
-| [Dead Letter Channel](#18-dead-letter-channel) | Integración | 8 |
-| [Transactional Outbox](#19-transactional-outbox) | Integración | 8 |
-| [Clean Architecture](#110-clean-architecture) | Diseño | Todos |
-| [Aggregate y Domain Events](#111-aggregate-y-domain-events) | Diseño | 2, 3, 4, 5 |
-| [Strategy](#112-strategy) | Diseño | 7 |
+| [Webhook](#11-webhook) | Integration | 1 |
+| [Idempotent Receiver](#12-idempotent-receiver) | Integration | 1, 3, 8 |
+| [Envelope Wrapper](#13-envelope-wrapper) | Integration | 1 |
+| [Message Translator](#14-message-translator) | Integration | 1, 7 |
+| [Publish-Subscribe Channel](#15-publish-subscribe-channel) | Integration | 5, 6, 7, 8 |
+| [Message Filter](#16-message-filter) | Integration | 6 |
+| [Retry with exponential backoff](#17-retry-with-exponential-backoff) | Integration | 8 |
+| [Dead Letter Channel](#18-dead-letter-channel) | Integration | 8 |
+| [Transactional Outbox](#19-transactional-outbox) | Integration | 8 |
+| [Clean Architecture](#110-clean-architecture) | Design | All |
+| [Aggregate and Domain Events](#111-aggregate-and-domain-events) | Design | 2, 3, 4, 5 |
+| [Strategy](#112-strategy) | Design | 7 |
 
-Los nombres de los patrones de integración siguen el catálogo de *Enterprise Integration
-Patterns* (Hohpe y Woolf).
+Integration pattern names follow the *Enterprise Integration Patterns* catalog (Hohpe and Woolf).
 
-### Patrones de integración
+### Integration patterns
 
 #### 1.1 Webhook
 
-- **Requisito:** 1. Recibir los eventos del TMS en tiempo real.
-- **Problema:** la integración necesita enterarse de cada cambio de estado apenas ocurre.
-- **Solución:** el TMS hace un `POST` a `/api/webhooks/tms/events` cada vez que ocurre un evento. La API autentica, valida, descarta duplicados, publica y responde `202 Accepted` sin procesar la lógica de negocio.
-- **Por qué este patrón:** el TMS avisa solo cuando hay una novedad, sin consultas inútiles ni demoras.
-- **Alternativa descartada:** consultar al TMS cada cierto tiempo (polling). Con miles de envíos diarios serían miles de consultas sin resultado, y cada cambio se conocería con retraso.
-- **Tradeoff:** la integración no controla cuándo, cuántas veces ni en qué orden llegan los eventos. Por eso el endpoint responde rápido (para evitar que el TMS reenvíe por timeout), exige una API key y descarta duplicados.
+- **Requirement:** 1. Receive TMS events in real time.
+- **Problem:** the integration needs to know about each status change as soon as it happens.
+- **Solution:** the TMS sends a `POST` to `/api/webhooks/tms/events` every time an event occurs. The API authenticates, validates, discards duplicates, publishes and responds `202 Accepted` without running the business logic.
+- **Why this pattern:** the TMS notifies only when there is something new, with no wasted queries or delays.
+- **Discarded alternative:** querying the TMS periodically (polling). With thousands of daily shipments, that would mean thousands of queries with no result, and every change would be detected late.
+- **Tradeoff:** the integration does not control when, how many times or in what order events arrive. That's why the endpoint responds quickly (to keep the TMS from resending on timeout), requires an API key and discards duplicates.
 
 #### 1.2 Idempotent Receiver
 
-- **Requisitos:** 1 (recepción), 3 (contador de visitas) y 8 (consistencia).
-- **Problema:** los webhooks se entregan *al menos una vez*: si el TMS no recibe la respuesta, reenvía el mismo evento. Un `NOT DELIVERED` duplicado sumaría una visita de más, y podría disparar un `TO BE RETURN` con solo dos visitas reales.
-- **Solución:** como la trama no incluye un identificador de evento, se calcula una clave SHA-256 con `orderNumber`, `serviceType`, `status`, `subStatus` y `eventDate`. `TryRegisterAsync` registra la clave en una sola operación atómica: si ya existía, el evento se descarta y se responde `202` igual. Si la publicación falla después de registrar la clave, se libera para que el reenvío del TMS no se descarte por error.
-- **Por qué este patrón:** el enunciado no menciona los duplicados, pero los reenvíos del webhook y los reintentos del requisito 8 los producen. Sin deduplicación, el requisito 3 se corrompe.
-- **Alternativa descartada:** comprobar si la clave existe y después agregarla, en dos pasos. Dos reenvíos simultáneos pasarían los dos la comprobación (condición de carrera).
-- **Tradeoff:** dos eventos distintos con exactamente los mismos campos se tratarían como duplicados. Es un caso improbable, porque `eventDate` tiene precisión de segundos.
+- **Requirements:** 1 (reception), 3 (visit counter) and 8 (consistency).
+- **Problem:** webhooks are delivered *at least once*: if the TMS does not receive the response, it resends the same event. A duplicated `NOT DELIVERED` would add an extra visit, and could trigger a `TO BE RETURN` with only two real visits.
+- **Solution:** since the payload does not include an event identifier, a SHA-256 key is computed from `orderNumber`, `serviceType`, `status`, `subStatus` and `eventDate`. `TryRegisterAsync` registers the key in a single atomic operation: if it already existed, the event is discarded and `202` is returned anyway. If publishing fails after registering the key, the key is released so the TMS resend is not discarded by mistake.
+- **Why this pattern:** the requirements don't mention duplicates, but webhook resends and the retries from requirement 8 produce them. Without deduplication, requirement 3 gets corrupted.
+- **Discarded alternative:** checking whether the key exists and then adding it, in two steps. Two simultaneous resends would both pass the check (race condition).
+- **Tradeoff:** two different events with exactly the same fields would be treated as duplicates. This is unlikely, because `eventDate` has second-level precision.
 
 #### 1.3 Envelope Wrapper
 
-- **Requisito:** 1.
-- **Problema:** los suscriptores necesitan metadatos técnicos (la clave del evento, la hora de recepción) que no forman parte de la trama del TMS.
-- **Solución:** `TmsEventReceived` envuelve al evento de negocio (`TmsEvent`) junto con `EventKey` y `ReceivedAt`.
-- **Por qué este patrón:** separa los datos de negocio de los datos técnicos. La clave se calcula una sola vez y la reutilizan todos los suscriptores.
-- **Alternativa descartada:** agregar los metadatos como campos de `TmsEvent`, mezclando lo que dice el TMS con lo que agrega la integración.
+- **Requirement:** 1.
+- **Problem:** subscribers need technical metadata (the event key, the reception time) that is not part of the TMS payload.
+- **Solution:** `TmsEventReceived` wraps the business event (`TmsEvent`) together with `EventKey` and `ReceivedAt`.
+- **Why this pattern:** it separates business data from technical data. The key is computed once and reused by every subscriber.
+- **Discarded alternative:** adding the metadata as fields of `TmsEvent`, mixing what the TMS says with what the integration adds.
 
 #### 1.4 Message Translator
 
-- **Requisitos:** 1 (entrada) y 7 (salida).
-- **Problema:** el TMS usa sus propios valores (por ejemplo, `"AT PICKUP POINT"`, con espacios), y cada cliente espera las notificaciones con su propia estructura.
-- **Solución:** en la entrada, `TmsCodes` traduce los valores del TMS a los enums del dominio. En la salida, cada formateador traduce el modelo neutro `OrderStatusNotification` a la estructura de su cliente.
-- **Por qué este patrón:** el dominio no conoce el formato del TMS ni el de ningún cliente. Un cambio de formato afecta a una sola clase.
-- **Alternativa descartada:** poner atributos de serialización en los enums del dominio, lo que haría depender a la capa más interna del formato JSON de un sistema externo.
+- **Requirements:** 1 (input) and 7 (output).
+- **Problem:** the TMS uses its own values (for example, `"AT PICKUP POINT"`, with spaces), and each customer expects notifications in its own structure.
+- **Solution:** on input, `TmsCodes` translates TMS values into domain enums. On output, each formatter translates the neutral `OrderStatusNotification` model into its customer's structure.
+- **Why this pattern:** the domain knows neither the TMS format nor any customer's format. A format change affects a single class.
+- **Discarded alternative:** putting serialization attributes on the domain enums, which would make the innermost layer depend on an external system's JSON format.
 
 #### 1.5 Publish-Subscribe Channel
 
-- **Requisitos:** 5 (historial), 6 (evidencias), 7 (notificación) y 8 (reintentos independientes).
-- **Problema:** un mismo evento dispara tres efectos independientes. Si uno falla o tarda, los demás no deberían verse afectados.
-- **Solución:** un bus con dos tópicos: eventos recibidos y eventos procesados. Cada suscriptor tiene su propio canal y su propio worker, con sus propios reintentos (*fan-out*). Las suscripciones se registran al iniciar la aplicación.
-- **Por qué este patrón:** la descarga lenta de una foto no demora el historial, y una notificación fallida se reintenta sin repetir las demás. Es coreografía: cada suscriptor reacciona por su cuenta.
-- **Alternativas descartadas:**
-  - **Procesamiento síncrono en el webhook:** la respuesta al TMS dependería del paso más lento, y un fallo en cualquier paso haría fallar todo el evento.
-  - **Observer en memoria:** es síncrono, comparte el hilo y no permite reintentar un suscriptor por separado.
-  - **Orquestación (Saga):** los efectos no dependen entre sí ni necesitan compensarse, así que un orquestador central sería complejidad sin beneficio.
-  - **Un solo canal compartido:** cada mensaje llegaría a un único suscriptor (*Competing Consumers*), no a todos.
-- **Tradeoff:** los efectos secundarios son eventualmente consistentes: ocurren unos milisegundos después de actualizar el pedido.
+- **Requirements:** 5 (history), 6 (evidences), 7 (notification) and 8 (independent retries).
+- **Problem:** a single event triggers three independent effects. If one fails or is slow, the others should not be affected.
+- **Solution:** a bus with two topics: received events and processed events. Each subscriber has its own channel and its own worker, with its own retries (*fan-out*). Subscriptions are registered at application startup.
+- **Why this pattern:** a slow photo download does not delay the history, and a failed notification is retried without repeating the others. It's choreography: each subscriber reacts on its own.
+- **Discarded alternatives:**
+  - **Synchronous processing in the webhook:** the response to the TMS would depend on the slowest step, and a failure in any step would fail the whole event.
+  - **In-memory Observer:** it's synchronous, shares the thread and doesn't allow retrying a single subscriber.
+  - **Orchestration (Saga):** the effects don't depend on each other nor need compensation, so a central orchestrator would be complexity with no benefit.
+  - **A single shared channel:** each message would reach only one subscriber (*Competing Consumers*), not all of them.
+- **Tradeoff:** side effects are eventually consistent: they happen a few milliseconds after the order is updated.
 
 #### 1.6 Message Filter
 
-- **Requisito:** 6. Las evidencias se guardan solo en seis hitos.
-- **Problema:** todos los eventos procesados llegan al suscriptor de evidencias, pero solo algunos deben almacenarlas.
-- **Solución:** `EvidenceMilestoneFilter` deja pasar un evento solo si su estado es uno de los seis hitos (`COLLECTED`, `NOT COLLECTED`, `DELIVERED`, `NOT DELIVERED`, `RETURNED`, `NOT RETURNED`), si trae evidencias y si se aplicó al pedido.
-- **Por qué este patrón:** la regla del requisito queda en un único lugar, separada de la descarga y el almacenamiento.
-- **Alternativa descartada:** *Content-Based Router*. Un router elige entre varios destinos según el contenido; acá hay un único destino y la decisión es pasar o no pasar.
+- **Requirement:** 6. Evidences are stored only at six milestones.
+- **Problem:** every processed event reaches the evidence subscriber, but only some should store evidences.
+- **Solution:** `EvidenceMilestoneFilter` lets an event through only if its status is one of the six milestones (`COLLECTED`, `NOT COLLECTED`, `DELIVERED`, `NOT DELIVERED`, `RETURNED`, `NOT RETURNED`), if it carries evidences and if it was applied to the order.
+- **Why this pattern:** the requirement's rule lives in a single place, separate from downloading and storage.
+- **Discarded alternative:** *Content-Based Router*. A router picks among several destinations based on content; here there is a single destination and the decision is pass or don't pass.
 
-#### 1.7 Retry con backoff exponencial
+#### 1.7 Retry with exponential backoff
 
-- **Requisito:** 8. Gestionar automáticamente los fallos temporales.
-- **Problema:** una caída momentánea de la red o del servidor de evidencias no debería perder datos ni requerir intervención manual.
-- **Solución:** Polly en dos niveles:
+- **Requirement:** 8. Automatically handle transient failures.
+- **Problem:** a momentary network or evidence server outage should not lose data or require manual intervention.
+- **Solution:** Polly at two levels:
 
-  | Nivel | Intentos | Esperas | Reintenta |
+  | Level | Attempts | Delays | Retries on |
   |---|---|---|---|
-  | Descarga HTTP de evidencias | 4 | ~2s, ~4s, ~8s | 5xx, 408, 429, errores de red y timeouts por intento (10s). No reintenta los 4xx |
-  | Cada suscriptor del bus | 4 | ~1s, ~2s, ~4s | Cualquier error, salvo el apagado de la aplicación |
+  | HTTP evidence download | 4 | ~2s, ~4s, ~8s | 5xx, 408, 429, network errors and per-attempt timeouts (10s). Does not retry 4xx |
+  | Each bus subscriber | 4 | ~1s, ~2s, ~4s | Any error, except application shutdown |
 
-  Cada reintento de un suscriptor usa un scope de inyección de dependencias nuevo, para no arrastrar estado de un intento fallido.
-- **Por qué este patrón:** el backoff exponencial le da tiempo al servicio para recuperarse, y el *jitter* reparte los reintentos para que muchos fallos simultáneos no reintenten en el mismo instante.
-- **Alternativa descartada:** reintentos con espera fija, que vuelven a saturar a un servicio que ya está en problemas.
-- **Tradeoff:** se distinguen los errores **transitorios** de los **permanentes**. Una URL mal formada (`htps://`) o un 404 no se arreglan reintentando, así que no se reintentan a nivel HTTP.
+  Each subscriber retry uses a new dependency injection scope, so no state is carried over from a failed attempt.
+- **Why this pattern:** exponential backoff gives the service time to recover, and *jitter* spreads out retries so many simultaneous failures don't retry at the same instant.
+- **Discarded alternative:** fixed-delay retries, which keep hammering a service that is already struggling.
+- **Tradeoff:** **transient** errors are distinguished from **permanent** ones. A malformed URL (`htps://`) or a 404 won't be fixed by retrying, so they are not retried at the HTTP level.
 
 #### 1.8 Dead Letter Channel
 
-- **Requisito:** 8. Evitar la pérdida de datos.
-- **Problema:** un mensaje que agota todos los reintentos se perdería.
-- **Solución:** el worker lo guarda en una cola de mensajes fallidos con el mensaje completo en JSON, el suscriptor que falló, el error y la fecha. Si guardarlo también fallara, el worker lo registra como error crítico y sigue procesando.
-- **Por qué este patrón:** el mensaje queda disponible para revisarlo o reprocesarlo. Al registrar el suscriptor, se puede reprocesar solo el efecto que falló, sin repetir los demás.
+- **Requirement:** 8. Prevent data loss.
+- **Problem:** a message that exhausts all retries would be lost.
+- **Solution:** the worker stores it in a dead letter queue with the full message as JSON, the failing subscriber, the error and the date. If storing it also fails, the worker logs it as a critical error and keeps processing.
+- **Why this pattern:** the message remains available to inspect or reprocess. Since the subscriber is recorded, only the failed effect can be reprocessed, without repeating the others.
 
 #### 1.9 Transactional Outbox
 
-- **Requisito:** 8. Garantizar la consistencia.
-- **Problema:** guardar el pedido y publicar sus eventos son dos operaciones. Si la publicación falla después de guardar, el pedido cambia pero el historial, las evidencias y la notificación nunca se enteran.
-- **Solución:** el handler guarda el pedido y el mensaje en el Outbox en la misma unidad de trabajo. Un `OutboxDispatcher` en segundo plano publica los mensajes pendientes y solo los quita después de publicarlos.
-- **Por qué este patrón:** un fallo en la publicación deja el mensaje pendiente para el siguiente intento. La entrega es *al menos una vez*: puede haber un duplicado, pero nunca una pérdida.
-- **Alternativa descartada:** una transacción distribuida entre la base de datos y el broker, que la mayoría de los brokers no soporta y agrega complejidad y acoplamiento.
+- **Requirement:** 8. Guarantee consistency.
+- **Problem:** saving the order and publishing its events are two operations. If publishing fails after saving, the order changes but the history, evidences and notification never find out.
+- **Solution:** the handler saves the order and the Outbox message in the same unit of work. A background `OutboxDispatcher` publishes pending messages and only removes them after publishing.
+- **Why this pattern:** a publishing failure leaves the message pending for the next attempt. Delivery is *at least once*: there may be a duplicate, but never a loss.
+- **Discarded alternative:** a distributed transaction between the database and the broker, which most brokers don't support and which adds complexity and coupling.
 
-### Patrones de diseño
+### Design patterns
 
 #### 1.10 Clean Architecture
 
-- **Problema:** el enunciado permite reemplazar los servicios externos por implementaciones en memoria, pero el diseño debe poder evolucionar a servicios reales.
-- **Solución:** cuatro proyectos con las dependencias hacia el centro: Domain no depende de nada, Application define los **puertos** (interfaces) e Infrastructure los **implementa**.
-- **Por qué este patrón:** reemplazar el bus en memoria por un broker real, o los repositorios por una base de datos, solo modifica Infrastructure. Las reglas de negocio y los casos de uso no cambian.
+- **Problem:** the requirements allow replacing external services with in-memory implementations, but the design must be able to evolve to real services.
+- **Solution:** four projects with dependencies pointing toward the center: Domain depends on nothing, Application defines the **ports** (interfaces) and Infrastructure **implements** them.
+- **Why this pattern:** replacing the in-memory bus with a real broker, or the repositories with a database, only modifies Infrastructure. Business rules and use cases don't change.
 
-#### 1.11 Aggregate y Domain Events
+#### 1.11 Aggregate and Domain Events
 
-- **Requisitos:** 2, 3, 4 y 5.
-- **Problema:** el estado final, el contador de visitas y el `TO BE RETURN` automático son reglas que deben cumplirse siempre, sin importar quién modifique el pedido.
-- **Solución:** `Order` es un aggregate con propiedades de solo lectura y un único método, `Apply`, para cambiar su estado. En lugar de llamar a otros componentes, registra lo ocurrido como domain events (`OrderStatusChanged` y `OrderEventRejected`) que después se publican.
-- **Por qué este patrón:** las reglas no se pueden saltear, y el dominio no conoce el historial, las evidencias ni las notificaciones.
-- **Alternativa descartada:** Observer dentro del dominio. El aggregate no tiene suscriptores: solo acumula hechos que se publican después de guardar.
+- **Requirements:** 2, 3, 4 and 5.
+- **Problem:** the final state, the visit counter and the automatic `TO BE RETURN` are rules that must always hold, no matter who modifies the order.
+- **Solution:** `Order` is an aggregate with read-only properties and a single method, `Apply`, to change its state. Instead of calling other components, it records what happened as domain events (`OrderStatusChanged` and `OrderEventRejected`) that are published afterwards.
+- **Why this pattern:** the rules can't be bypassed, and the domain knows nothing about history, evidences or notifications.
+- **Discarded alternative:** Observer inside the domain. The aggregate has no subscribers: it only accumulates facts that are published after saving.
 
 #### 1.12 Strategy
 
-- **Requisito:** 7. Cada cliente tiene su propia estructura de notificación.
-- **Solución:** cada cliente con formato propio tiene un `INotificationFormatter`, y un formateador por defecto cubre a los demás. `NotificationFormatterResolver` elige el formateador según el código del cliente.
-- **Por qué este patrón:** agregar un cliente es agregar una clase y registrarla. El handler y el resolvedor no cambian (principio abierto/cerrado).
-- **Alternativa descartada:** un `switch` por código de cliente dentro del handler, que crecería con cada cliente nuevo.
+- **Requirement:** 7. Each customer has its own notification structure.
+- **Solution:** each customer with its own format has an `INotificationFormatter`, and a default formatter covers the rest. `NotificationFormatterResolver` picks the formatter based on the customer code.
+- **Why this pattern:** adding a customer means adding a class and registering it. The handler and the resolver don't change (open/closed principle).
+- **Discarded alternative:** a `switch` on the customer code inside the handler, which would grow with every new customer.
 
 ---
 
-## 2. Interpretaciones del enunciado
+## 2. Interpretations of the requirements
 
-| Tema | Interpretación | Motivo |
+| Topic | Interpretation | Reason |
 |---|---|---|
-| Estados finales | Solo `DELIVERED` y `RETURNED` bloquean nuevos eventos. No se valida una tabla completa de transiciones | Es lo que pide el requisito 2. Una tabla estricta podría rechazar eventos reales del TMS, por ejemplo si se pierde un `STARTED` |
-| Contador de visitas | Solo `DELIVERED` y `NOT DELIVERED` suman una visita | Son los únicos estados en los que el courier llegó al domicilio |
-| Devolución automática | El `TO BE RETURN` se emite cuando la tercera visita es un `NOT DELIVERED`. Si es un `DELIVERED`, el pedido ya es final | Devolver un pedido entregado contradice el requisito 2 |
-| Momento de la devolución | El `TO BE RETURN` automático se aplica en la misma operación que el tercer `NOT DELIVERED`, y se marca como automático | Un pedido nunca puede quedar con tres visitas fallidas sin pasar a devolución |
-| Fase de devolución | `TO BE RETURN` pertenece a la fase de devolución | "Asignado a devolución" ya forma parte de ese proceso |
-| Historial | Se registran también los eventos rechazados, con su motivo | El requisito 5 pide registrar *cada* evento |
-| Evidencias | No se guardan las evidencias de los eventos rechazados | No corresponden a ningún cambio del pedido. El rechazo igual queda en el historial |
-| Notificación | Los eventos rechazados no se notifican. La tercera visita fallida genera dos notificaciones: `NOT DELIVERED` y `TO BE RETURN` | Para el cliente, un evento rechazado no cambia nada |
-| Datos automáticos | El `TO BE RETURN` automático no hereda `subStatus`, courier, vehículo ni receptor del evento que lo provocó | Ningún courier lo reportó |
-| Sub estados | `subStatus` se acepta como texto libre | El enunciado no define sus valores posibles |
-| Pedidos desconocidos | Un evento de un pedido que no existe en el OMS se ignora y se registra en el log | El OMS es la fuente de verdad de los pedidos; la integración no los crea |
+| Final states | Only `DELIVERED` and `RETURNED` block new events. A full transition table is not validated | That's what requirement 2 asks for. A strict table could reject real TMS events, for example if a `STARTED` is lost |
+| Visit counter | Only `DELIVERED` and `NOT DELIVERED` add a visit | They are the only states in which the courier reached the address |
+| Automatic return | `TO BE RETURN` is emitted when the third visit is a `NOT DELIVERED`. If it's a `DELIVERED`, the order is already final | Returning a delivered order contradicts requirement 2 |
+| Timing of the return | The automatic `TO BE RETURN` is applied in the same operation as the third `NOT DELIVERED`, and is flagged as automatic | An order can never be left with three failed visits without moving to return |
+| Return phase | `TO BE RETURN` belongs to the return phase | "Assigned to return" is already part of that process |
+| History | Rejected events are also recorded, with their reason | Requirement 5 asks to record *every* event |
+| Evidences | Evidences from rejected events are not stored | They don't correspond to any change in the order. The rejection is still recorded in the history |
+| Notification | Rejected events are not notified. The third failed visit produces two notifications: `NOT DELIVERED` and `TO BE RETURN` | For the customer, a rejected event changes nothing |
+| Automatic data | The automatic `TO BE RETURN` does not inherit `subStatus`, courier, vehicle or receiver from the event that triggered it | No courier reported it |
+| Sub-statuses | `subStatus` is accepted as free text | The requirements don't define its possible values |
+| Unknown orders | An event for an order that doesn't exist in the OMS is ignored and logged | The OMS is the source of truth for orders; the integration does not create them |
 
 ---
 
-## 3. Supuestos
+## 3. Assumptions
 
-| Tema | Supuesto |
+| Topic | Assumption |
 |---|---|
-| Fecha del evento | `eventDate` llega en formato `yyyy-MM-dd HH:mm:ss`, sin zona horaria, y está en hora de Lima (UTC-5). Se usa un desfase fijo, porque Perú no tiene horario de verano |
-| Campos obligatorios | `serviceType`, `status`, `details.orderNumber` y `eventDate`. El resto es opcional |
-| Valores del TMS | `status`, `serviceType` y `dispatchType` se comparan sin distinguir mayúsculas |
-| Identificación del evento | La combinación de pedido, tipo de servicio, estado, sub estado y fecha identifica un único evento |
-| Autenticación del webhook | El TMS envía una API key en el header `X-Api-Key`. Si el TMS firma sus tramas (por ejemplo, con HMAC), validar la firma sería más seguro |
-| Cliente del pedido | El código de cliente se toma del pedido en el OMS; el de la trama del TMS se usa solo si el OMS no lo tiene |
-| Respuesta a duplicados | El TMS deja de reenviar un evento cuando recibe un `2xx` |
+| Event date | `eventDate` arrives in `yyyy-MM-dd HH:mm:ss` format, without a time zone, and is in Lima time (UTC-5). A fixed offset is used, because Peru has no daylight saving time |
+| Required fields | `serviceType`, `status`, `details.orderNumber` and `eventDate`. Everything else is optional |
+| TMS values | `status`, `serviceType` and `dispatchType` are compared case-insensitively |
+| Event identification | The combination of order, service type, status, sub-status and date identifies a single event |
+| Webhook authentication | The TMS sends an API key in the `X-Api-Key` header. If the TMS signs its payloads (for example, with HMAC), validating the signature would be more secure |
+| Order customer | The customer code is taken from the order in the OMS; the one in the TMS payload is used only if the OMS doesn't have it |
+| Duplicate response | The TMS stops resending an event when it receives a `2xx` |
 
 ---
 
-## 4. Limitaciones conocidas
+## 4. Known limitations
 
-| Tema | Limitación | Mejora posible |
+| Topic | Limitation | Possible improvement |
 |---|---|---|
-| Persistencia en memoria | Pedidos, historial, evidencias, mensajes pendientes y claves se pierden al reiniciar | Base de datos y servicios externos reales |
-| Atomicidad del Outbox | En memoria no se puede demostrar que el pedido y el mensaje se guardan en la misma transacción | Tabla Outbox en la misma base de datos que los pedidos |
-| Claves de idempotencia | No expiran, así que la memoria crece con cada evento | Caché distribuida con expiración |
-| Duplicados | La entrega *al menos una vez* puede repetir una notificación. En memoria, reintentar `ProcessTmsEventHandler` podría aplicar un evento dos veces, porque el repositorio devuelve la misma instancia | Registrar en el pedido las claves de los eventos ya aplicados |
-| Eventos desordenados | Se guarda la fecha del último evento, pero no se descartan los eventos más antiguos | Ignorar los eventos con `eventDate` anterior al último aplicado |
-| `TO BE RETURN` duplicado | Si el TMS envía su propio `TO BE RETURN` después del automático, se aplica y se notifica otra vez | Ignorar un cambio al mismo estado |
-| Reintentos multiplicados | En el peor caso, una descarga se intenta 16 veces (4 HTTP × 4 del suscriptor), y el suscriptor reintenta también los errores permanentes | Excluir los errores 4xx del reintento del suscriptor |
-| Tamaño de evidencias | No hay un límite de tamaño de descarga | Rechazar archivos grandes según `Content-Length` |
-| Consulta del historial | El endpoint no tiene autenticación | Autenticación propia, por ejemplo con JWT |
-| Formatos de notificación | Se definen en código | Plantillas por cliente como configuración |
-| Cola de mensajes fallidos | No hay un endpoint para consultarla ni reprocesar sus mensajes | Reprocesamiento desde el broker o un endpoint administrativo |
+| In-memory persistence | Orders, history, evidences, pending messages and keys are lost on restart | Real database and external services |
+| Outbox atomicity | In memory, it can't be shown that the order and the message are saved in the same transaction | Outbox table in the same database as the orders |
+| Idempotency keys | They don't expire, so memory grows with each event | Distributed cache with expiration |
+| Duplicates | *At-least-once* delivery may repeat a notification. In memory, retrying `ProcessTmsEventHandler` could apply an event twice, because the repository returns the same instance | Record the keys of already applied events on the order |
+| Out-of-order events | The date of the last event is stored, but older events are not discarded | Ignore events whose `eventDate` is earlier than the last applied one |
+| Duplicate `TO BE RETURN` | If the TMS sends its own `TO BE RETURN` after the automatic one, it is applied and notified again | Ignore a change to the same status |
+| Multiplied retries | In the worst case, a download is attempted 16 times (4 HTTP × 4 subscriber), and the subscriber also retries permanent errors | Exclude 4xx errors from the subscriber retry |
+| Evidence size | There is no download size limit | Reject large files based on `Content-Length` |
+| History query | The endpoint has no authentication | Its own authentication, for example with JWT |
+| Notification formats | Defined in code | Per-customer templates as configuration |
+| Dead letter queue | There is no endpoint to query it or reprocess its messages | Reprocessing from the broker or an administrative endpoint |

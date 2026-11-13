@@ -1,122 +1,122 @@
-# Integración TMS-OMS
+# TMS-OMS Integration
 
-Integración que sincroniza el estado de los pedidos entre un **TMS** externo (por ejemplo,
-Beetrack) y el **OMS** interno de una empresa de logística, y mantiene informados a los clientes
-sobre el progreso de sus pedidos.
+Integration that synchronizes order status between an external **TMS** (for example, Beetrack)
+and a logistics company's internal **OMS**, and keeps customers informed about the progress of
+their orders.
 
-Recibe los eventos del TMS por webhook, actualiza el pedido en el OMS y, de forma asíncrona e
-independiente, registra el historial, almacena las evidencias y notifica al cliente con su
-propio formato, con reintentos automáticos ante fallos temporales.
+It receives TMS events via webhook, updates the order in the OMS and, asynchronously and
+independently, records the history, stores the evidences and notifies the customer in its own
+format, with automatic retries on transient failures.
 
-![Arquitectura física](docs/diagrams/deployment.svg)
+![Physical architecture](docs/diagrams/deployment.svg)
 
-## Documentación
+## Documentation
 
-| Documento | Contenido |
+| Document | Content |
 |---|---|
-| [Arquitectura](docs/diagram.md) | Diagramas de arquitectura y descripción de componentes |
-| [Decisiones técnicas](docs/technical-decisions.md) | Justificación de patrones, interpretaciones del enunciado, supuestos y limitaciones |
+| [Architecture](docs/diagram.md) | Architecture diagrams and component description |
+| [Technical decisions](docs/technical-decisions.md) | Pattern justification, interpretations of the requirements, assumptions and limitations |
 
-## Requisitos cubiertos
+## Covered requirements
 
-| # | Requisito | Implementación |
+| # | Requirement | Implementation |
 |---|---|---|
-| 1 | Recepción de eventos vía webhook | `POST /api/webhooks/tms/events`: API key, validación de la trama, descarte de duplicados y respuesta `202 Accepted` |
-| 2 | Actualización del estado del pedido | `Order.Apply` rechaza los eventos de pedidos en `DELIVERED` o `RETURNED` |
-| 3 | Contador de visitas | `DELIVERED` y `NOT DELIVERED` suman una visita |
-| 4 | Devolución | Al tercer `NOT DELIVERED` se emite `TO BE RETURN` automáticamente |
-| 5 | Registro histórico | Historial de solo agregado, con los eventos aplicados y rechazados. `GET /api/orders/{orderNumber}/history` |
-| 6 | Almacenamiento de evidencias | En los seis hitos se descargan las evidencias y se guardan por pedido |
-| 7 | Notificación al cliente | Un formateador por cliente (Strategy) y uno por defecto |
-| 8 | Lógica de reintentos | Backoff exponencial con jitter, cola de mensajes fallidos y Outbox |
+| 1 | Event reception via webhook | `POST /api/webhooks/tms/events`: API key, payload validation, duplicate discarding and `202 Accepted` response |
+| 2 | Order status update | `Order.Apply` rejects events for orders in `DELIVERED` or `RETURNED` |
+| 3 | Visit counter | `DELIVERED` and `NOT DELIVERED` add one visit |
+| 4 | Return | On the third `NOT DELIVERED`, `TO BE RETURN` is emitted automatically |
+| 5 | History log | Append-only history, with both applied and rejected events. `GET /api/orders/{orderNumber}/history` |
+| 6 | Evidence storage | At the six milestones, evidences are downloaded and stored per order |
+| 7 | Customer notification | One formatter per customer (Strategy) plus a default one |
+| 8 | Retry logic | Exponential backoff with jitter, dead letter queue and Outbox |
 
-## Tecnologías
+## Technologies
 
-- **.NET 10** y **ASP.NET Core Web API** con controllers
-- **Clean Architecture**: proyectos `Domain`, `Application`, `Infrastructure` y `Api`
-- **`System.Threading.Channels`** como bus Publish-Subscribe en memoria
-- **Polly 8** (`Microsoft.Extensions.Http.Resilience`) para los reintentos
-- Repositorios y almacenamiento **en memoria**, según lo permite el enunciado: no se requiere ningún servicio externo
-- **xUnit** para las pruebas unitarias
+- **.NET 10** and **ASP.NET Core Web API** with controllers
+- **Clean Architecture**: `Domain`, `Application`, `Infrastructure` and `Api` projects
+- **`System.Threading.Channels`** as an in-memory Publish-Subscribe bus
+- **Polly 8** (`Microsoft.Extensions.Http.Resilience`) for retries
+- **In-memory** repositories and storage, as allowed by the requirements: no external service is needed
+- **xUnit** for unit tests
 
-## Estructura del proyecto
+## Project structure
 
 ```
 TmsOmsIntegration.slnx
-├── TmsOmsIntegration.Domain          Reglas de negocio: aggregate Order y domain events
-├── TmsOmsIntegration.Application     Casos de uso, suscriptores y puertos (interfaces)
-├── TmsOmsIntegration.Infrastructure  Bus, Outbox, reintentos, repositorios, evidencias y notificaciones
-├── TmsOmsIntegration.Api             Controllers, contratos de entrada y composición de la aplicación
-├── TmsOmsIntegration.Tests           Pruebas unitarias de Domain y Application
-└── docs                              Diagramas y decisiones técnicas
+├── TmsOmsIntegration.Domain          Business rules: Order aggregate and domain events
+├── TmsOmsIntegration.Application     Use cases, subscribers and ports (interfaces)
+├── TmsOmsIntegration.Infrastructure  Bus, Outbox, retries, repositories, evidences and notifications
+├── TmsOmsIntegration.Api             Controllers, input contracts and application composition
+├── TmsOmsIntegration.Tests           Unit tests for Domain and Application
+└── docs                              Diagrams and technical decisions
 ```
 
-## Cómo ejecutarlo
+## How to run it
 
-**Requisito previo:** [SDK de .NET 10](https://dotnet.microsoft.com/download). Visual Studio 2026
-ya lo incluye.
+**Prerequisite:** [.NET 10 SDK](https://dotnet.microsoft.com/download). Visual Studio 2026
+already includes it.
 
-El webhook exige una API key en el header `X-Api-Key`. Ningún secreto se guarda en el repositorio:
-[`appsettings.model.json`](TmsOmsIntegration.Api/appsettings.model.json) muestra la estructura
-esperada, y el valor se configura con User Secrets. Si la API key no está configurada, la
-aplicación no arranca e indica el motivo.
+The webhook requires an API key in the `X-Api-Key` header. No secret is stored in the repository:
+[`appsettings.model.json`](TmsOmsIntegration.Api/appsettings.model.json) shows the expected
+structure, and the value is configured with User Secrets. If the API key is not configured, the
+application does not start and explains why.
 
-En todos los casos, la API queda disponible en `http://localhost:5020`.
+In every case, the API is available at `http://localhost:5020`.
 
-### Opción A: Visual Studio 2026
+### Option A: Visual Studio 2026
 
-1. Abrir la solución `TmsOmsIntegration.slnx`.
-2. Configurar la API key: clic derecho en el proyecto `TmsOmsIntegration.Api` → **Administrar secretos de usuario** y completar el `secrets.json` que se abre:
+1. Open the `TmsOmsIntegration.slnx` solution.
+2. Configure the API key: right-click the `TmsOmsIntegration.Api` project → **Manage User Secrets** and fill in the `secrets.json` that opens:
 
    ```json
    {
      "TmsWebhook": {
-       "ApiKey": "<tu-api-key>"
+       "ApiKey": "<your-api-key>"
      }
    }
    ```
 
-3. Verificar que `TmsOmsIntegration.Api` sea el proyecto de inicio y elegir el perfil **`http`** en la barra de herramientas.
-4. Ejecutar con **F5** (con depuración) o **Ctrl+F5** (sin depuración).
-5. Abrir [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), reemplazar `<your-tms-webhook-api-key>` por la API key configurada y hacer clic en **Send request** sobre la petición.
+3. Make sure `TmsOmsIntegration.Api` is the startup project and select the **`http`** profile in the toolbar.
+4. Run with **F5** (with debugging) or **Ctrl+F5** (without debugging).
+5. Open [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), replace `<your-tms-webhook-api-key>` with the configured API key and click **Send request** on the request.
 
-> Al probar los reintentos con depuración, Visual Studio se detiene en cada excepción que luego maneja Polly. Para ver el flujo completo sin interrupciones, conviene usar **Ctrl+F5**.
+> When testing retries with debugging, Visual Studio breaks on every exception that Polly later handles. To see the full flow without interruptions, use **Ctrl+F5**.
 
-### Opción B: Visual Studio Code
+### Option B: Visual Studio Code
 
-Requiere las extensiones [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)
-y [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client).
+Requires the [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)
+and [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extensions.
 
-1. Abrir la carpeta del repositorio.
-2. Configurar la API key desde la terminal integrada:
+1. Open the repository folder.
+2. Configure the API key from the integrated terminal:
 
    ```bash
-   dotnet user-secrets set "TmsWebhook:ApiKey" "<tu-api-key>" --project TmsOmsIntegration.Api
+   dotnet user-secrets set "TmsWebhook:ApiKey" "<your-api-key>" --project TmsOmsIntegration.Api
    ```
 
-3. Ejecutar la API desde la terminal:
+3. Run the API from the terminal:
 
    ```bash
    dotnet run --project TmsOmsIntegration.Api --launch-profile http
    ```
 
-   O, para depurar, desde **Run and Debug** (Ctrl+Shift+D) con la configuración **C#** sobre el proyecto `TmsOmsIntegration.Api`.
+   Or, to debug, from **Run and Debug** (Ctrl+Shift+D) with the **C#** configuration on the `TmsOmsIntegration.Api` project.
 
-4. Abrir [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), reemplazar `<your-tms-webhook-api-key>` por la API key configurada y hacer clic en **Send Request** sobre la petición.
+4. Open [`TmsOmsIntegration.Api.http`](TmsOmsIntegration.Api/TmsOmsIntegration.Api.http), replace `<your-tms-webhook-api-key>` with the configured API key and click **Send Request** on the request.
 
-### Opción C: línea de comandos
+### Option C: command line
 
 ```bash
-dotnet user-secrets set "TmsWebhook:ApiKey" "<tu-api-key>" --project TmsOmsIntegration.Api
+dotnet user-secrets set "TmsWebhook:ApiKey" "<your-api-key>" --project TmsOmsIntegration.Api
 dotnet run --project TmsOmsIntegration.Api --launch-profile http
 ```
 
-Y enviar un evento con `curl`:
+Send an event with `curl`:
 
 ```bash
 curl -X POST http://localhost:5020/api/webhooks/tms/events \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: <tu-api-key>" \
+  -H "X-Api-Key: <your-api-key>" \
   -d '{
     "serviceType": "LAST_MILE",
     "status": "NOT DELIVERED",
@@ -126,35 +126,35 @@ curl -X POST http://localhost:5020/api/webhooks/tms/events \
   }'
 ```
 
-Y consultar el historial del pedido:
+And query the order history:
 
 ```bash
 curl http://localhost:5020/api/orders/2500000007-01/history
 ```
 
-El resultado de cada paso (notificaciones, evidencias guardadas, reintentos y mensajes fallidos)
-se muestra en la consola de la aplicación.
+The result of each step (notifications, stored evidences, retries and dead-lettered messages) is
+shown in the application console.
 
-## Pruebas unitarias
+## Unit tests
 
-Las pruebas cubren las reglas de negocio y las piezas de Application con decisiones propias. No
-requieren levantar la API ni configurar la API key.
+The tests cover the business rules and the Application pieces that make their own decisions. They
+don't require starting the API or configuring the API key.
 
-| Clase probada | Qué verifica | Requisitos |
+| Class under test | What it verifies | Requirements |
 |---|---|---|
-| `Order` | Rechazo de eventos en `DELIVERED` y `RETURNED` | 2 |
-| `Order` | Contador de visitas y `TO BE RETURN` automático solo con el tercer `NOT DELIVERED` | 3, 4 |
-| `ReceiveTmsEvent` y `TmsEventKey` | Descarte de duplicados, liberación de la clave si falla la publicación y normalización de la clave | 1 |
-| `EvidenceMilestoneFilter` | Evidencias solo en los seis hitos, con evidencias y en eventos aplicados | 6 |
-| `NotificationFormatterResolver` | Formateador del cliente, formateador por defecto y errores de configuración | 7 |
+| `Order` | Rejection of events in `DELIVERED` and `RETURNED` | 2 |
+| `Order` | Visit counter and automatic `TO BE RETURN` only on the third `NOT DELIVERED` | 3, 4 |
+| `ReceiveTmsEvent` and `TmsEventKey` | Duplicate discarding, key release when publishing fails, and key normalization | 1 |
+| `EvidenceMilestoneFilter` | Evidences only at the six milestones, when present, and on applied events | 6 |
+| `NotificationFormatterResolver` | Customer formatter, default formatter and configuration errors | 7 |
 
-**Visual Studio 2026:** menú **Prueba** → **Ejecutar todas las pruebas** (Ctrl+R, A). Los resultados
-se ven en el **Explorador de pruebas** (Ctrl+E, T).
+**Visual Studio 2026:** **Test** menu → **Run All Tests** (Ctrl+R, A). Results are shown in
+**Test Explorer** (Ctrl+E, T).
 
-**Visual Studio Code:** con C# Dev Kit, desde la vista **Testing** (el ícono del matraz) →
+**Visual Studio Code:** with C# Dev Kit, from the **Testing** view (the flask icon) →
 **Run Tests**.
 
-**Línea de comandos:**
+**Command line:**
 
 ```bash
 dotnet test
@@ -162,33 +162,41 @@ dotnet test
 
 ## Endpoints
 
-| Método | Ruta | Respuestas |
+| Method | Route | Responses |
 |---|---|---|
-| `POST` | `/api/webhooks/tms/events` | `202` evento aceptado (también para duplicados) · `400` trama inválida · `401` API key ausente o incorrecta |
-| `GET` | `/api/orders/{orderNumber}/history` | `200` historial del pedido · `404` el pedido no existe en el OMS |
+| `POST` | `/api/webhooks/tms/events` | `202` event accepted (also for duplicates) · `400` invalid payload · `401` missing or wrong API key |
+| `GET` | `/api/orders/{orderNumber}/history` | `200` order history · `404` the order does not exist in the OMS |
 
-## Datos de prueba
+## Test data
 
-El OMS se representa con estos pedidos, que se cargan al iniciar la aplicación:
+The OMS is represented by these orders, loaded at application startup:
 
-| Pedido | Cliente | Formato de notificación |
+| Order | Customer | Notification format |
 |---|---|---|
-| `2500000006-01` | `01021755` (TIENDAS PERUANAS) | Propio del cliente |
-| `2500000007-01` | `01021755` (TIENDAS PERUANAS) | Propio del cliente |
-| `2500000008-01` | `01021800` | Por defecto |
-| `2500000009-01` | `01021900` | Por defecto |
+| `2500000006-01` | `01021755` (TIENDAS PERUANAS) | Customer-specific |
+| `2500000007-01` | `01021755` (TIENDAS PERUANAS) | Customer-specific |
+| `2500000008-01` | `01021800` | Default |
+| `2500000009-01` | `01021900` | Default |
 
-Todos los datos están en memoria: al reiniciar la aplicación, los pedidos vuelven a su estado inicial.
+All data lives in memory: when the application restarts, orders return to their initial state.
 
-## Escenarios de prueba
+## Test scenarios
 
-| Escenario | Cómo probarlo | Resultado esperado |
+| Scenario | How to test it | Expected result |
 |---|---|---|
-| Devolución automática | Tres `NOT DELIVERED` sobre `2500000007-01`, con `eventDate` distintas | El historial muestra tres visitas y un `TO BE RETURN` automático |
-| Pedido en estado final | Un `DELIVERED` y después un `PLANNING` sobre `2500000006-01` | El `PLANNING` queda en el historial como rechazado (`FinalState`) |
-| Evento duplicado | El mismo evento dos veces | Ambos responden `202`; el segundo se descarta |
-| Formato por cliente | Un evento sobre `2500000007-01` y otro sobre `2500000008-01` | Dos notificaciones con estructuras distintas en la consola |
-| Evidencias | Un `DELIVERED` con una URL de evidencia válida y otra `htps://` | La válida se guarda; la inválida se omite sin rechazar el evento |
-| Reintentos | Un `DELIVERED` con la evidencia `https://httpbin.org/status/503` | Reintentos con esperas crecientes y, al final, el mensaje en la cola de mensajes fallidos |
+| Automatic return | Three `NOT DELIVERED` on `2500000007-01`, with different `eventDate` values | The history shows three visits and an automatic `TO BE RETURN` |
+| Order in final state | A `DELIVERED` followed by a `PLANNING` on `2500000006-01` | The `PLANNING` is recorded in the history as rejected (`FinalState`) |
+| Duplicate event | The same event twice | Both return `202`; the second one is discarded |
+| Per-customer format | One event on `2500000007-01` and another on `2500000008-01` | Two notifications with different structures in the console |
+| Evidences | A `DELIVERED` with one valid evidence URL and one `htps://` | The valid one is stored; the invalid one is skipped without rejecting the event |
+| Retries | A `DELIVERED` with the evidence `https://httpbin.org/status/503` | Retries with increasing delays and, finally, the message in the dead letter queue |
 
-Cada evento nuevo necesita una `eventDate` distinta: si no, se descarta como duplicado.
+Each new event needs a different `eventDate`; otherwise it is discarded as a duplicate.
+
+## See it in action
+
+Console output of the **Retries** scenario. The customer notification is sent right away, while the
+evidence download receives a `503` and Polly starts retrying it. Each subscriber has its own
+channel, so the failing download does not block the notification.
+
+![Console output of the retries scenario](docs/images/retries-console.png)

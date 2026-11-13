@@ -1,292 +1,166 @@
-# Arquitectura - Integración TMS-OMS
+# Architecture - TMS-OMS Integration
 
-La integración sincroniza el estado de los pedidos entre el **TMS** externo y el **OMS** interno.
-Recibe los eventos del TMS por webhook, actualiza el pedido en el OMS y, de forma asíncrona e
-independiente, registra el historial, almacena las evidencias y notifica al cliente.
+The integration synchronizes order status between the external **TMS** and the internal **OMS**.
+It receives TMS events via webhook, updates the order in the OMS and, asynchronously and
+independently, records the history, stores the evidences and notifies the customer.
 
-Este documento cubre dos entregables del caso:
+This document covers two deliverables of the case:
 
-1. [Diagrama de Arquitectura](#1-diagrama-de-arquitectura)
-2. [Descripción de Componentes](#2-descripción-de-componentes)
+1. [Architecture Diagram](#1-architecture-diagram)
+2. [Component Description](#2-component-description)
 
-La justificación de los patrones y las demás decisiones técnicas están en
+The justification of the patterns and the other technical decisions are in
 [technical-decisions.md](technical-decisions.md).
+
+The diagrams are generated from the PlantUML sources in [diagrams/](diagrams/). To regenerate them:
+
+```bash
+java -jar plantuml.jar -tsvg -charset UTF-8 docs/diagrams/*.puml
+```
+
+`clean-architecture.svg` is a hand-written SVG and is edited directly.
 
 ---
 
-## 1. Diagrama de Arquitectura
+## 1. Architecture Diagram
 
-La arquitectura se presenta en cuatro vistas, de la más concreta a la más interna:
+The architecture is presented in four views, from the most concrete to the most internal:
 
-| Vista | Responde |
+| View | Answers |
 |---|---|
-| [1.1 Arquitectura física](#11-arquitectura-física) | ¿Dónde corre el sistema y cómo fluye un evento? |
-| [1.2 Contexto](#12-contexto-c4-nivel-1) | ¿Con qué sistemas y personas se comunica? |
-| [1.3 Clean Architecture](#13-clean-architecture) | ¿Cómo está organizado el código? |
-| [1.4 Componentes](#14-componentes-c4-nivel-3) | ¿Qué piezas hay en cada capa y cómo dependen entre sí? |
+| [1.1 Physical architecture](#11-physical-architecture) | Where does the system run and how does an event flow? |
+| [1.2 Context](#12-context-c4-level-1) | Which systems and people does it communicate with? |
+| [1.3 Clean Architecture](#13-clean-architecture) | How is the code organized? |
+| [1.4 Components](#14-components-c4-level-3) | Which pieces exist in each layer and how do they depend on each other? |
 
-### 1.1 Arquitectura física
+### 1.1 Physical architecture
 
-Muestra los **artefactos** del sistema tal como se ejecuta hoy y los **flujos de comunicación**
-entre ellos, numerados en el orden en que ocurren.
+Shows the system's **artifacts** as it runs today and the **communication flows** between them,
+numbered in the order they occur.
 
-![Arquitectura física](diagrams/deployment.svg)
+![Physical architecture](diagrams/deployment.svg)
 
-| Paso | Flujo | Descripción |
+| Step | Flow | Description |
 |---|---|---|
-| 1 | TMS → API Web | El TMS envía el evento por webhook. La API valida la API key y la trama, descarta duplicados y responde `202 Accepted` |
-| 2 | API Web → Bus de eventos | El evento se publica en el tópico de eventos recibidos |
-| 3 | Bus → Procesadores | El bus entrega una copia del evento a cada suscriptor |
-| 4 | Procesadores → Almacenamiento | Se aplica el evento al pedido (estado, visitas, devolución) y se guarda el resultado junto con el Outbox |
-| 5 | Procesadores → Bus de eventos | El Outbox publica el evento procesado en el segundo tópico |
-| 6 | Procesadores → TMS | En los hitos con evidencias, se descargan las fotos y firmas desde el TMS |
-| 7 | Procesadores → Cliente | Se envía la notificación con el formato propio de cada cliente |
+| 1 | TMS → Web API | The TMS sends the event via webhook. The API validates the API key and the payload, discards duplicates and responds `202 Accepted` |
+| 2 | Web API → Event bus | The event is published to the received-events topic |
+| 3 | Bus → Processors | The bus delivers a copy of the event to each subscriber |
+| 4 | Processors → Storage | The event is applied to the order (status, visits, return) and the result is saved together with the Outbox |
+| 5 | Processors → Event bus | The Outbox publishes the processed event to the second topic |
+| 6 | Processors → TMS | At milestones with evidences, photos and signatures are downloaded from the TMS |
+| 7 | Processors → Customer | The notification is sent in each customer's own format |
 
-A partir del paso 5, los tres efectos secundarios (historial, evidencias y notificación) corren
-**en paralelo**, cada uno con sus propios reintentos: el fallo de uno no detiene a los demás.
+From step 5 onwards, the three side effects (history, evidences and notification) run
+**in parallel**, each with its own retries: a failure in one does not stop the others.
 
-<details>
-<summary>Código PlantUML</summary>
+Source: [`deployment.puml`](diagrams/deployment.puml)
 
-```plantuml
-@startuml deployment
-!include <C4/C4_Deployment>
+### 1.2 Context (C4 Level 1)
 
-LAYOUT_TOP_DOWN()
-skinparam linetype ortho
-skinparam ranksep 120
-skinparam nodesep 160
+Shows the integration as a single box and the systems and people it communicates with. In blue,
+what belongs to the company; in gray, what is external.
 
-title Arquitectura Física - Integración TMS-OMS
+![Context diagram](diagrams/context.svg)
 
-System_Ext(tms, "TMS", "Emite los eventos de los pedidos y aloja las fotos de las evidencias")
-
-Deployment_Node(server, "Servidor de aplicación", "Un solo proceso .NET 10: TmsOmsIntegration.Api") {
-
-    Container(api, "API Web", "ASP.NET Core", "Recibe los eventos del TMS (webhook) y expone la consulta del historial")
-
-    ContainerQueue(bus, "Bus de eventos", "En memoria, Publish-Subscribe", "Tópicos de eventos recibidos y procesados. Reintentos y cola de mensajes fallidos")
-
-    Container(workers, "Procesadores en segundo plano", "Background services", "Actualizan el pedido, registran el historial, guardan las evidencias y notifican al cliente")
-
-    ContainerDb(store, "Almacenamiento", "En memoria", "Pedidos, historial, evidencias, eventos ya recibidos y Outbox")
-}
-
-Person(client, "Cliente", "Recibe la notificación con su propio formato")
-
-Rel_D(tms, api, "1. Envía el evento", "HTTPS POST")
-Rel_D(api, bus, "2. Publica el evento recibido")
-Rel_D(bus, workers, "3. Entrega a cada suscriptor")
-Rel_D(workers, store, "4. Lee y guarda")
-Rel_U(workers, bus, "5. Publica el evento procesado")
-Rel_U(workers, tms, "6. Descarga las evidencias", "HTTPS GET")
-Rel_D(workers, client, "7. Envía la notificación", "Push")
-Rel_D(api, store, "Consulta el historial")
-
-SHOW_LEGEND()
-@enduml
-```
-
-</details>
-
-### 1.2 Contexto (C4 Nivel 1)
-
-Muestra la integración como una sola caja y los sistemas y personas con los que se comunica.
-En azul, lo que pertenece a la empresa; en gris, lo externo.
-
-![Diagrama de contexto](diagrams/context.svg)
-
-<details>
-<summary>Código PlantUML</summary>
-
-```plantuml
-@startuml context
-!include <C4/C4_Context>
-
-LAYOUT_TOP_DOWN()
-skinparam linetype ortho
-skinparam ranksep 140
-skinparam nodesep 120
-
-title Diagrama de Contexto (C4 Nivel 1) - Integración TMS-OMS
-
-Person_Ext(courier, "Courier", "Recoge, entrega y devuelve pedidos en una ruta")
-
-System_Ext(tms, "TMS", "Sistema externo de gestión de transporte (ej. Beetrack). Hace el seguimiento de las rutas y emite los eventos de los pedidos")
-
-System(integration, "Integración TMS-OMS", "Recibe los eventos del TMS, actualiza los pedidos, registra el historial, almacena las evidencias y notifica a los clientes")
-
-System(oms, "OMS", "Sistema interno de gestión de pedidos. Fuente de verdad de clientes y pedidos")
-System_Ext(storage, "Almacenamiento de evidencias", "Guarda las fotos y firmas digitales de cada pedido")
-System_Ext(push, "Proveedor de Push", "Entrega las notificaciones a los clientes")
-
-Person(client, "Cliente", "Empresa dueña de los pedidos (ej. TIENDAS PERUANAS)")
-
-Rel_D(courier, tms, "Reporta los eventos de la ruta", "App móvil")
-Rel_D(tms, integration, "Envía los eventos de los pedidos", "Webhook, HTTPS POST, JSON")
-Rel_U(integration, tms, "Descarga las evidencias", "HTTPS GET")
-Rel_D(integration, oms, "Consulta y actualiza pedidos, registra el historial")
-Rel_D(integration, storage, "Almacena las evidencias por pedido")
-Rel_D(integration, push, "Envía notificaciones con el formato de cada cliente")
-Rel_D(push, client, "Notificación push")
-
-SHOW_LEGEND()
-@enduml
-```
-
-</details>
+Source: [`context.puml`](diagrams/context.puml)
 
 ### 1.3 Clean Architecture
 
-El código se organiza en cuatro proyectos. Las dependencias apuntan siempre hacia el centro:
-el dominio contiene las reglas de negocio y no depende de nada.
+The code is organized in four projects. Dependencies always point toward the center: the domain
+contains the business rules and depends on nothing.
 
 ![Clean Architecture](diagrams/clean-architecture.svg)
 
-| Capa | Proyecto | Depende de |
+| Layer | Project | Depends on |
 |---|---|---|
-| Domain | `TmsOmsIntegration.Domain` | Nada |
+| Domain | `TmsOmsIntegration.Domain` | Nothing |
 | Application | `TmsOmsIntegration.Application` | Domain |
 | Infrastructure | `TmsOmsIntegration.Infrastructure` | Application |
-| Api | `TmsOmsIntegration.Api` | Application e Infrastructure (solo para registrar la inyección de dependencias en `Program.cs`) |
+| Api | `TmsOmsIntegration.Api` | Application and Infrastructure (only to register dependency injection in `Program.cs`) |
 
-### 1.4 Componentes (C4 Nivel 3)
+### 1.4 Components (C4 Level 3)
 
-Muestra las piezas de cada capa y sus dependencias. Application define los **puertos**
-(interfaces) e Infrastructure los **implementa**: así, cambiar una tecnología (por ejemplo, el
-bus en memoria por un broker de mensajería) no afecta a Application ni a Domain.
+Shows the pieces of each layer and their dependencies. Application defines the **ports**
+(interfaces) and Infrastructure **implements** them: this way, changing a technology (for
+example, the in-memory bus for a message broker) does not affect Application or Domain.
 
-![Diagrama de componentes](diagrams/components.svg)
+![Component diagram](diagrams/components.svg)
 
-<details>
-<summary>Código PlantUML</summary>
-
-```plantuml
-@startuml components
-!include <C4/C4_Component>
-
-LAYOUT_TOP_DOWN()
-skinparam linetype ortho
-skinparam ranksep 150
-skinparam nodesep 130
-
-title Diagrama de Componentes (C4 Nivel 3) - Clean Architecture
-
-Boundary(apiLayer, "Api", "Entrada HTTP") {
-    Component(controllers, "Controllers", "ASP.NET Core", "TmsWebhookController (webhook) y OrdersController (historial)")
-    Component(apiSupport, "Contratos y filtros", "DTOs, Mappings, Filters", "Forma del JSON del TMS, traducción de códigos y validación de la API key")
-}
-
-Boundary(applicationLayer, "Application", "Casos de uso") {
-    Component(useCases, "Casos de uso", "C#", "ReceiveTmsEvent (recepción) y GetOrderHistory (consulta)")
-    Component(handlers, "Suscriptores", "IEventHandler", "Procesar el evento, registrar el historial, guardar las evidencias y notificar al cliente")
-    Component(ports, "Puertos", "Interfaces", "Bus, Outbox, repositorios, almacenamiento de evidencias y notificaciones")
-}
-
-Boundary(domainLayer, "Domain", "Reglas de negocio") {
-    Component(order, "Order", "Aggregate", "Estado final, contador de visitas y TO BE RETURN automático")
-    Component(domainEvents, "Domain events", "Records", "OrderStatusChanged y OrderEventRejected")
-}
-
-Boundary(infrastructureLayer, "Infrastructure", "Adaptadores") {
-    Component(messaging, "Mensajería", "Channel<T>, Polly", "Bus Pub/Sub, workers con reintentos, Outbox y Dead Letter Queue")
-    Component(persistence, "Persistencia", "En memoria", "Pedidos, historial e idempotencia")
-    Component(evidences, "Evidencias", "HttpClient, en memoria", "Descarga con reintentos y almacenamiento por pedido")
-    Component(notifications, "Notificaciones", "Strategy", "Formateadores por cliente y envío push")
-}
-
-Rel_D(controllers, useCases, "Usa")
-Rel_R(controllers, apiSupport, "Usa")
-Rel_D(useCases, ports, "Depende de")
-Rel_D(handlers, ports, "Depende de")
-Rel_D(handlers, order, "Aplica las reglas")
-Rel_R(order, domainEvents, "Genera")
-
-Rel_U(messaging, ports, "Implementa")
-Rel_U(persistence, ports, "Implementa")
-Rel_U(evidences, ports, "Implementa")
-Rel_U(notifications, ports, "Implementa")
-
-SHOW_LEGEND()
-@enduml
-```
-
-</details>
+Source: [`components.puml`](diagrams/components.puml)
 
 ---
 
-## 2. Descripción de Componentes
+## 2. Component Description
 
-### 2.1 Sistemas y personas externos
+### 2.1 External systems and people
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **Courier** | Persona que recoge, entrega y devuelve los pedidos. Reporta cada evento de la ruta en el TMS |
-| **TMS** | Sistema externo de gestión de transporte (por ejemplo, Beetrack). Emite los eventos de los pedidos por webhook y aloja las fotos y firmas de las evidencias |
-| **OMS** | Sistema interno de gestión de pedidos. Es la fuente de verdad de clientes y pedidos |
-| **Almacenamiento de evidencias** | Guarda las evidencias digitales de cada pedido, organizadas por número de pedido |
-| **Proveedor de Push** | Entrega las notificaciones a cada cliente |
-| **Cliente** | Empresa dueña de los pedidos. Recibe las notificaciones con su propia estructura |
+| **Courier** | Person who picks up, delivers and returns orders. Reports every route event in the TMS |
+| **TMS** | External transportation management system (for example, Beetrack). Emits order events via webhook and hosts the evidence photos and signatures |
+| **OMS** | Internal order management system. The source of truth for customers and orders |
+| **Evidence storage** | Stores the digital evidences of each order, organized by order number |
+| **Push provider** | Delivers notifications to each customer |
+| **Customer** | Company that owns the orders. Receives notifications in its own structure |
 
-### 2.2 Artefactos de la arquitectura física
+### 2.2 Physical architecture artifacts
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **Servidor de aplicación** | Un solo proceso .NET 10 (`TmsOmsIntegration.Api`) que contiene la API, el bus, los procesadores y el almacenamiento |
-| **API Web** | Punto de entrada HTTP. Recibe el webhook del TMS, responde rápido con `202 Accepted` y expone la consulta del historial |
-| **Bus de eventos** | Mensajería Publish-Subscribe en memoria con dos tópicos: eventos recibidos y eventos procesados. Cada suscriptor tiene su propio canal, con reintentos y cola de mensajes fallidos |
-| **Procesadores en segundo plano** | Consumen los tópicos: actualizan el pedido, registran el historial, guardan las evidencias y notifican al cliente. También publican el Outbox |
-| **Almacenamiento** | Pedidos, historial, evidencias, claves de los eventos ya recibidos y mensajes pendientes del Outbox |
+| **Application server** | A single .NET 10 process (`TmsOmsIntegration.Api`) that contains the API, the bus, the processors and the storage |
+| **Web API** | HTTP entry point. Receives the TMS webhook, responds quickly with `202 Accepted` and exposes the history query |
+| **Event bus** | In-memory Publish-Subscribe messaging with two topics: received events and processed events. Each subscriber has its own channel, with retries and a dead letter queue |
+| **Background processors** | Consume the topics: update the order, record the history, store the evidences and notify the customer. They also publish the Outbox |
+| **Storage** | Orders, history, evidences, keys of already received events and pending Outbox messages |
 
-### 2.3 Componentes por capa
+### 2.3 Components per layer
 
 #### Api
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **TmsWebhookController** | Endpoint `POST /api/webhooks/tms/events`. Delega en el caso de uso de recepción y responde `202` también para los duplicados, para que el TMS deje de reenviarlos |
-| **OrdersController** | Endpoint `GET /api/orders/{orderNumber}/history`. Devuelve el historial del pedido, o `404` si el pedido no existe en el OMS |
-| **Contratos y filtros** | `TmsEventRequest` replica la trama del TMS y la valida. `TmsCodes` traduce los valores del TMS (por ejemplo, `"AT PICKUP POINT"`) a los enums del dominio. `TmsEventDateConverter` interpreta el formato de fecha del TMS. `ApiKeyAuthFilter` valida el header `X-Api-Key` con una comparación de tiempo constante |
+| **TmsWebhookController** | `POST /api/webhooks/tms/events` endpoint. Delegates to the reception use case and responds `202` for duplicates too, so the TMS stops resending them |
+| **OrdersController** | `GET /api/orders/{orderNumber}/history` endpoint. Returns the order history, or `404` if the order does not exist in the OMS |
+| **Contracts and filters** | `TmsEventRequest` mirrors the TMS payload and validates it. `TmsCodes` translates TMS values (for example, `"AT PICKUP POINT"`) into domain enums. `TmsEventDateConverter` parses the TMS date format. `ApiKeyAuthFilter` validates the `X-Api-Key` header with a constant-time comparison |
 
 #### Application
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **ReceiveTmsEvent** | Calcula una clave por evento (el TMS no envía un identificador), descarta los duplicados y publica el evento recibido. Si la publicación falla, libera la clave para que el reenvío del TMS no se pierda |
-| **ProcessTmsEventHandler** | Suscriptor del tópico de eventos recibidos. Busca el pedido, le aplica el evento y deja el resultado en el Outbox antes de guardar el pedido |
-| **RecordHistoryHandler** | Registra en el historial cada evento procesado, tanto los aplicados como los rechazados |
-| **StoreEvidencesHandler** | Solo en los seis hitos con evidencias (`COLLECTED`, `NOT COLLECTED`, `DELIVERED`, `NOT DELIVERED`, `RETURNED`, `NOT RETURNED`): descarga cada evidencia y la guarda asociada al pedido. Una URL inválida se omite sin frenar el evento |
-| **NotifyClientHandler** | Obtiene el cliente desde el OMS, elige su formateador y envía una notificación por cada cambio de estado. Los eventos rechazados no se notifican |
-| **GetOrderHistory** | Caso de uso de consulta del historial |
-| **Puertos** | Interfaces que Application necesita y que Infrastructure implementa: bus de eventos, Outbox, cola de mensajes fallidos, repositorios, descarga y almacenamiento de evidencias, formateo y envío de notificaciones |
+| **ReceiveTmsEvent** | Computes a key per event (the TMS does not send an identifier), discards duplicates and publishes the received event. If publishing fails, it releases the key so the TMS resend is not lost |
+| **ProcessTmsEventHandler** | Subscriber of the received-events topic. Finds the order, applies the event and puts the result in the Outbox before saving the order |
+| **RecordHistoryHandler** | Records every processed event in the history, both applied and rejected ones |
+| **StoreEvidencesHandler** | Only at the six milestones with evidences (`COLLECTED`, `NOT COLLECTED`, `DELIVERED`, `NOT DELIVERED`, `RETURNED`, `NOT RETURNED`): downloads each evidence and stores it linked to the order. An invalid URL is skipped without stopping the event |
+| **NotifyClientHandler** | Gets the customer from the OMS, picks its formatter and sends one notification per status change. Rejected events are not notified |
+| **GetOrderHistory** | History query use case |
+| **Ports** | Interfaces that Application needs and Infrastructure implements: event bus, Outbox, dead letter queue, repositories, evidence download and storage, notification formatting and sending |
 
 #### Domain
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **Order** | Aggregate del pedido. Es el único lugar donde cambia su estado: rechaza los eventos si el pedido ya está en `DELIVERED` o `RETURNED`, suma una visita con cada `DELIVERED` o `NOT DELIVERED`, y emite `TO BE RETURN` automáticamente cuando la tercera visita es un `NOT DELIVERED` |
-| **Domain events** | `OrderStatusChanged` (el pedido cambió de estado, con una marca si el cambio fue automático) y `OrderEventRejected` (el evento se rechazó, con su motivo) |
+| **Order** | Order aggregate. The only place where its status changes: rejects events if the order is already `DELIVERED` or `RETURNED`, adds a visit on each `DELIVERED` or `NOT DELIVERED`, and automatically emits `TO BE RETURN` when the third visit is a `NOT DELIVERED` |
+| **Domain events** | `OrderStatusChanged` (the order changed status, with a flag if the change was automatic) and `OrderEventRejected` (the event was rejected, with its reason) |
 
 #### Infrastructure
 
-| Componente | Función |
+| Component | Role |
 |---|---|
-| **Mensajería** | `ChannelEventBus` reparte cada mensaje en el canal de cada suscriptor (fan-out). `SubscriberWorker` consume cada canal con tres reintentos con backoff exponencial, y envía a la cola de mensajes fallidos lo que agota los reintentos. `OutboxDispatcher` publica los mensajes pendientes y solo los quita del Outbox después de publicarlos |
-| **Persistencia** | Repositorios en memoria de pedidos (con datos de prueba que representan al OMS) y de historial (solo agrega, nunca modifica). Almacén de claves para descartar eventos duplicados |
-| **Evidencias** | `HttpEvidenceDownloader` descarga cada evidencia por streaming, con reintentos con backoff exponencial y jitter, y timeouts por intento y totales. `InMemoryEvidenceStorage` las guarda en la ruta `orders/{pedido}/{archivo}` |
-| **Notificaciones** | Un formateador por defecto y uno específico para el cliente `01021755`, cada uno con su propia estructura de mensaje. `FakePushNotificationSender` simula el envío push escribiendo la notificación en el log |
+| **Messaging** | `ChannelEventBus` fans out each message to every subscriber's channel. `SubscriberWorker` consumes each channel with three retries using exponential backoff, and sends whatever exhausts the retries to the dead letter queue. `OutboxDispatcher` publishes pending messages and only removes them from the Outbox after publishing them |
+| **Persistence** | In-memory repositories for orders (with test data representing the OMS) and history (append-only, never modified). Key store for discarding duplicate events |
+| **Evidences** | `HttpEvidenceDownloader` downloads each evidence via streaming, with retries using exponential backoff and jitter, plus per-attempt and total timeouts. `InMemoryEvidenceStorage` stores them under the path `orders/{order}/{file}` |
+| **Notifications** | A default formatter and one specific to customer `01021755`, each with its own message structure. `FakePushNotificationSender` simulates the push delivery by writing the notification to the log |
 
-### 2.4 Implementación actual y evolución
+### 2.4 Current implementation and evolution
 
-Según lo permitido por el caso, los servicios externos se reemplazan por implementaciones en
-memoria. Gracias a los puertos, cada una se puede sustituir por un servicio real sin modificar
-Application ni Domain.
+As allowed by the case, external services are replaced by in-memory implementations. Thanks to the
+ports, each one can be swapped for a real service without modifying Application or Domain.
 
-| Componente | Implementación actual | Evolución a producción |
+| Component | Current implementation | Production evolution |
 |---|---|---|
-| Bus de eventos | `Channel<T>` en memoria | Broker de mensajería durable con tópicos, suscripciones y cola de mensajes fallidos nativa |
-| Pedidos, historial y Outbox | Diccionarios en memoria | Base de datos del OMS, con el pedido y el Outbox en la misma transacción |
-| Claves de idempotencia | Diccionario en memoria, sin expiración | Caché distribuida con expiración |
-| Almacenamiento de evidencias | Diccionario en memoria | Almacenamiento de objetos con acceso privado |
-| Envío push | Escritura en el log | Proveedor de notificaciones push o webhook de cada cliente |
-| API key del webhook | User Secrets | Gestor de secretos |
+| Event bus | In-memory `Channel<T>` | Durable message broker with topics, subscriptions and a native dead letter queue |
+| Orders, history and Outbox | In-memory dictionaries | OMS database, with the order and the Outbox in the same transaction |
+| Idempotency keys | In-memory dictionary, no expiration | Distributed cache with expiration |
+| Evidence storage | In-memory dictionary | Object storage with private access |
+| Push delivery | Writing to the log | Push notification provider or each customer's webhook |
+| Webhook API key | User Secrets | Secrets manager |

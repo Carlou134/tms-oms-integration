@@ -1,0 +1,499 @@
+### =====================================================================
+### Pruebas manuales por requerimiento
+###
+### Antes de empezar:
+###  - Reiniciá la API: todo vive en memoria, así que cada arranque parte de cero.
+###  - Pedidos semilla (OrderSeedData):
+###      2500000006-01 -> cliente 01021755 (Tiendas Peruanas, formato propio)
+###      2500000007-01 -> cliente 01021755
+###      2500000008-01 -> cliente 01021800 (formato por defecto)
+###      2500000009-01 -> cliente 01021900 (formato por defecto)
+###  - La clave de idempotencia es pedido + serviceType + status + subStatus + eventDate.
+###    Por eso cada request usa una eventDate distinta: si la repetís, se ignora como duplicado.
+###  - El procesamiento es asíncrono (Outbox con tick de 500 ms): esperá ~1 s antes de consultar el historial.
+###  - Notificaciones, evidencias y DLQ solo se verifican en los logs de la consola.
+### =====================================================================
+
+@host = http://localhost:5020
+@apiKey = <your-tms-webhook-api-key>
+
+
+### =====================================================================
+### REQ 1 — Recepción y validación del webhook
+### =====================================================================
+
+### 1.1 Sin API key -> 401
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+
+{
+  "serviceType": "PICKUP",
+  "status": "PLANNING",
+  "details": { "orderNumber": "2500000006-01" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.2 API key incorrecta -> 401
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: clave-incorrecta
+
+{
+  "serviceType": "PICKUP",
+  "status": "PLANNING",
+  "details": { "orderNumber": "2500000006-01" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.3 Status desconocido -> 400 "Unknown status"
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "status": "LOST",
+  "details": { "orderNumber": "2500000006-01" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.4 serviceType y dispatchType desconocidos -> 400 con dos errores
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "EXPRESS",
+  "dispatchType": "DRONE",
+  "status": "PLANNING",
+  "details": { "orderNumber": "2500000006-01" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.5 Fecha en ISO 8601 en vez del formato del TMS -> 400 "eventDate must use the format"
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "status": "PLANNING",
+  "details": { "orderNumber": "2500000006-01" },
+  "eventDate": "2025-04-10T08:00:00Z"
+}
+
+### 1.6 Sin details.orderNumber -> 400
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "status": "PLANNING",
+  "details": { "clientCode": "01021755" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.7 Pedido que no existe en el OMS -> 202 (se acepta)
+### Esperado en logs: "Order 9999999999-01 not found in OMS, ... event ignored"
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "status": "PLANNING",
+  "details": { "orderNumber": "9999999999-01" },
+  "eventDate": "2025-04-10 08:00:00"
+}
+
+### 1.8 Historial de un pedido inexistente -> 404
+GET {{host}}/api/orders/9999999999-01/history
+
+
+### =====================================================================
+### REQ 2, 5, 6 y 7 — Ciclo feliz completo (pedido 2500000006-01, Tiendas Peruanas)
+### Recorre los estados de recojo y de entrega.
+### =====================================================================
+
+### 2.1 PLANNING (recojo) — status en minúsculas: el mapeo no distingue mayúsculas
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "planning",
+  "subStatus": "ASSIGNED",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "clientName": "TIENDAS PERUANAS S.A."
+  },
+  "eventDate": "2025-04-15 08:00:00"
+}
+
+### 2.2 STARTED
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "STARTED",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": { "orderNumber": "2500000006-01", "trackingNumber": "OE2500000006-01", "clientCode": "01021755" },
+  "eventDate": "2025-04-15 09:00:00"
+}
+
+### 2.3 AT PICKUP POINT (status con espacios)
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "AT PICKUP POINT",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": { "orderNumber": "2500000006-01", "trackingNumber": "OE2500000006-01", "clientCode": "01021755" },
+  "eventDate": "2025-04-15 09:30:00"
+}
+
+### 2.4 COLLECTED con evidencia -> hito: se descarga y se guarda
+### Esperado en logs: "Evidence collected_001.jpg stored at memory://evidences/orders/2500000006-01/collected_001.jpg"
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "COLLECTED",
+  "subStatus": "VALIDATED",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "evidences": [
+      { "label": "Paquete", "fileType": ".jpg", "fileName": "collected_001.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-15 10:00:00"
+}
+
+### 2.5 PLANNING de última milla CON evidencia -> NO es hito: no se descarga nada
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "PLANNING",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "evidences": [
+      { "label": "No debería guardarse", "fileType": ".jpg", "fileName": "planning.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-15 14:00:00"
+}
+
+### 2.6 DELIVERED con 3 evidencias: una válida, una con path traversal y una con URL mal escrita
+### Esperado en logs:
+###  - "delivered_201054.jpg stored at .../orders/2500000006-01/delivered_201054.jpg"
+###  - "secrets.png stored at .../orders/2500000006-01/secrets.png" (el "../../" se descarta)
+###  - "Invalid evidence URL 'htps://...' ... evidence skipped"
+###  - Push a 01021755 con formato Tiendas Peruanas: "estado":"ENTREGADO","intentos":1,"recibidoPor":"Pepito Perez"
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "DELIVERED",
+  "subStatus": "CLIENT RECEIVED",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "clientName": "TIENDAS PERUANAS S.A.",
+    "receivedBy": "Pepito Perez",
+    "comments": "Entregado en domicilio",
+    "evidences": [
+      { "label": "Paquete", "fileType": ".jpg", "fileName": "delivered_201054.jpg", "url": "https://httpbin.org/image/jpeg" },
+      { "label": "Firma", "fileType": ".png", "fileName": "../../secrets.png", "url": "https://httpbin.org/image/png" },
+      { "label": "Fachada", "fileType": ".jpg", "fileName": "delivered_201055.jpg", "url": "htps://beetrack.com/img/delivered_201055.jpg" }
+    ]
+  },
+  "eventDate": "2025-04-15 16:53:07"
+}
+
+### 2.7 Idempotencia: el MISMO DELIVERED otra vez -> 202
+### Esperado en logs: "Duplicate DELIVERED event ignored". El historial NO suma otra entrada.
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "DELIVERED",
+  "subStatus": "CLIENT RECEIVED",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "receivedBy": "Pepito Perez"
+  },
+  "eventDate": "2025-04-15 16:53:07"
+}
+
+### 2.8 REQ 2 — Estado final: NOT DELIVERED después de DELIVERED -> se rechaza
+### Esperado: historial con outcome Rejected y rejectionReason FinalState.
+### NO se notifica al cliente y NO se guarda la evidencia (el evento no se aplicó).
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "NOT DELIVERED",
+  "subStatus": "CLIENT ABSENT",
+  "vehicleCode": "LIMURB06VAN",
+  "courierName": "Conductor 46",
+  "details": {
+    "orderNumber": "2500000006-01",
+    "trackingNumber": "OE2500000006-01",
+    "clientCode": "01021755",
+    "evidences": [
+      { "label": "Fachada", "fileType": ".jpg", "fileName": "rejected.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-16 10:00:00"
+}
+
+### 2.9 REQ 5 — Historial: 6 entradas aplicadas + 1 rechazada, sin el duplicado
+GET {{host}}/api/orders/2500000006-01/history
+
+
+### =====================================================================
+### REQ 3 y 4 — Contador de visitas y devolución automática (pedido 2500000007-01)
+### =====================================================================
+
+### 3.1 NOT DELIVERED, visita 1 -> visitCount = 1
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "NOT DELIVERED",
+  "subStatus": "CLIENT ABSENT",
+  "vehicleCode": "LIMURB07VAN",
+  "courierName": "Conductor 12",
+  "details": {
+    "orderNumber": "2500000007-01",
+    "trackingNumber": "OE2500000007-01",
+    "clientCode": "01021755",
+    "evidences": [
+      { "label": "Fachada", "fileType": ".jpg", "fileName": "visit1.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-15 11:00:00"
+}
+
+### 3.2 NOT DELIVERED, visita 2 (otro subStatus y otra fecha) -> visitCount = 2
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "NOT DELIVERED",
+  "subStatus": "WRONG ADDRESS",
+  "vehicleCode": "LIMURB07VAN",
+  "courierName": "Conductor 12",
+  "details": { "orderNumber": "2500000007-01", "trackingNumber": "OE2500000007-01", "clientCode": "01021755" },
+  "eventDate": "2025-04-16 11:00:00"
+}
+
+### 3.3 NOT DELIVERED, visita 3 -> visitCount = 3 y se auto-emite TO BE RETURN
+### Esperado: DOS entradas de historial (NotDelivered + ToBeReturn con isAutomatic = true y phase Return)
+### y DOS notificaciones: "NO_ENTREGADO" y "POR_DEVOLVER" con "devolucionAutomatica":true
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "NOT DELIVERED",
+  "subStatus": "CLIENT ABSENT",
+  "vehicleCode": "LIMURB07VAN",
+  "courierName": "Conductor 12",
+  "details": { "orderNumber": "2500000007-01", "trackingNumber": "OE2500000007-01", "clientCode": "01021755" },
+  "eventDate": "2025-04-17 11:00:00"
+}
+
+### 3.4 RETURNED con evidencia -> estado final, se guarda la evidencia
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "RETURN",
+  "dispatchType": "REVERSE",
+  "status": "RETURNED",
+  "subStatus": "RECEIVED BY CLIENT",
+  "vehicleCode": "LIMURB07VAN",
+  "courierName": "Conductor 12",
+  "details": {
+    "orderNumber": "2500000007-01",
+    "trackingNumber": "OE2500000007-01",
+    "clientCode": "01021755",
+    "receivedBy": "Almacén Tiendas Peruanas",
+    "evidences": [
+      { "label": "Guía firmada", "fileType": ".png", "fileName": "returned_001.png", "url": "https://httpbin.org/image/png" }
+    ]
+  },
+  "eventDate": "2025-04-18 15:00:00"
+}
+
+### 3.5 Historial: 3 NotDelivered (visitCount 1, 2, 3), ToBeReturn automático y Returned
+GET {{host}}/api/orders/2500000007-01/history
+
+
+### =====================================================================
+### REQ 7 — Formato de notificación por defecto (pedido 2500000008-01, cliente 01021800)
+### También cubre el camino de devolución fallida.
+### =====================================================================
+
+### 7.1 NOT COLLECTED con evidencia
+### Esperado en logs: push a 01021800 con el formato POR DEFECTO (distinto al de Tiendas Peruanas)
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "PICKUP",
+  "dispatchType": "STORE_WITHDRAWAL",
+  "status": "NOT COLLECTED",
+  "subStatus": "STORE CLOSED",
+  "vehicleCode": "LIMURB08VAN",
+  "courierName": "Conductor 08",
+  "details": {
+    "orderNumber": "2500000008-01",
+    "trackingNumber": "OE2500000008-01",
+    "clientCode": "01021800",
+    "clientName": "OTRO CLIENTE S.A.C.",
+    "evidences": [
+      { "label": "Tienda cerrada", "fileType": ".jpg", "fileName": "not_collected_001.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-15 12:00:00"
+}
+
+### 7.2 TO BE RETURN enviado por el TMS (manual, no automático) -> isAutomatic = false
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "RETURN",
+  "dispatchType": "REVERSE",
+  "status": "TO BE RETURN",
+  "vehicleCode": "LIMURB08VAN",
+  "courierName": "Conductor 08",
+  "details": { "orderNumber": "2500000008-01", "trackingNumber": "OE2500000008-01", "clientCode": "01021800" },
+  "eventDate": "2025-04-16 09:00:00"
+}
+
+### 7.3 NOT RETURNED con evidencia -> NO es estado final
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "RETURN",
+  "dispatchType": "REVERSE",
+  "status": "NOT RETURNED",
+  "subStatus": "CLIENT REJECTED",
+  "vehicleCode": "LIMURB08VAN",
+  "courierName": "Conductor 08",
+  "details": {
+    "orderNumber": "2500000008-01",
+    "trackingNumber": "OE2500000008-01",
+    "clientCode": "01021800",
+    "evidences": [
+      { "label": "Rechazo", "fileType": ".jpg", "fileName": "not_returned_001.jpg", "url": "https://httpbin.org/image/jpeg" }
+    ]
+  },
+  "eventDate": "2025-04-17 09:00:00"
+}
+
+### 7.4 Historial
+GET {{host}}/api/orders/2500000008-01/history
+
+
+### =====================================================================
+### REQ 8 — Reintentos y cola de mensajes fallidos (pedido 2500000009-01)
+### =====================================================================
+
+### 8.1 Evidencia que siempre responde 503
+### Esperado en logs, en este orden:
+###  - Reintentos HTTP del descargador (3 por intento, backoff ~2s, ~4s, ~8s)
+###  - Reintentos del suscriptor StoreEvidencesHandler (3, backoff ~1s, ~2s, ~4s)
+###  - "StoreEvidencesHandler failed to handle TmsEventProcessed after all retries, sent to dead letter queue"
+### Clave para la entrevista: el historial y la notificación SÍ se procesan, porque cada suscriptor
+### tiene su propio canal y sus propios reintentos (fan-out). La falla de uno no frena a los otros.
+### Tarda ~1-2 minutos en llegar a la DLQ.
+POST {{host}}/api/webhooks/tms/events
+Content-Type: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "serviceType": "LAST_MILE",
+  "dispatchType": "HOME_DELIVERY",
+  "status": "DELIVERED",
+  "subStatus": "CLIENT RECEIVED",
+  "vehicleCode": "LIMURB09VAN",
+  "courierName": "Conductor 09",
+  "details": {
+    "orderNumber": "2500000009-01",
+    "trackingNumber": "OE2500000009-01",
+    "clientCode": "01021900",
+    "receivedBy": "Juan Quispe",
+    "evidences": [
+      { "label": "Paquete", "fileType": ".jpg", "fileName": "always_fails.jpg", "url": "https://httpbin.org/status/503" }
+    ]
+  },
+  "eventDate": "2025-04-15 13:00:00"
+}
+
+### 8.2 Inmediatamente después: el historial ya muestra el DELIVERED aunque la evidencia siga reintentando
+GET {{host}}/api/orders/2500000009-01/history
+
+###
